@@ -1,0 +1,34 @@
+python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+
+npm run dev
+
+docker-compose up -d postgres redis
+//docker desktop running
+
+
+Email	Password	Role
+admin@iotaps.dev	Admin123!	Super Admin
+project@iotaps.dev	Project123!	Project Center
+user@iotaps.dev	User1234!	Device User
+
+postgres:
+  volumes:
+    - postgres_data:/var/lib/postgresql/data  # ← persisted on disk
+
+redis:
+  volumes:
+    - redis_data:/data  # ← persisted on disk
+
+# 1. Pull/build new image
+docker-compose build fastapi-api
+
+# 2. Restart only the app containers (DB stays untouched)
+docker-compose up -d --no-deps fastapi-api workers nginx
+
+# 3. Run any new migrations (adds tables/columns, never drops)
+docker-compose exec fastapi-api alembic upgrade head
+
+Never run docker-compose down -v — the -v flag deletes volumes (your data). Use docker-compose down without -v.
+
+Back up before deploy:
+docker exec iotaps-postgres pg_dump -U iotaps iotaps > backup_$(date +%Y%m%d).sql

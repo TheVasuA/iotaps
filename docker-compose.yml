@@ -1,0 +1,141 @@
+# IoTAPS Platform - Docker Compose stack (single Contabo VPS deployment)
+# Services: nginx, fastapi-api, workers, mosquitto, postgres (TimescaleDB), redis
+# All services use `restart: always` so the platform self-heals on crash/reboot
+# (Req 30.3, 32.3). The `workers` service runs the 8 background worker processes
+# under a supervisor (Req 30.1).
+
+services:
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: iotaps-nginx
+    restart: always
+    depends_on:
+      - fastapi-api
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./infra/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./infra/nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./infra/nginx/certs:/etc/nginx/certs:ro
+      - ./web/dist:/usr/share/nginx/html:ro
+    networks:
+      - iotaps
+
+  fastapi-api:
+    build:
+      context: ./app
+      dockerfile: Dockerfile
+    image: iotaps/api:latest
+    container_name: iotaps-api
+    restart: always
+    env_file:
+      - .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    expose:
+      - "8000"
+    command: >
+      gunicorn app.main:app
+      --workers ${API_WORKERS:-4}
+      --worker-class uvicorn.workers.UvicornWorker
+      --bind 0.0.0.0:8000
+      --timeout 60
+    networks:
+      - iotaps
+
+  workers:
+    build:
+      context: ./app
+      dockerfile: Dockerfile
+    image: iotaps/api:latest
+    container_name: iotaps-workers
+    restart: always
+    env_file:
+      - .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      mosquitto:
+        condition: service_started
+    # Runs all 8 background workers under supervisord; each worker is
+    # independently restarted on unexpected termination (Req 30.1, 30.3).
+    command: ["supervisord", "-c", "/etc/supervisor/supervisord.conf", "-n"]
+    volumes:
+      - ./infra/supervisor/supervisord.conf:/etc/supervisor/supervisord.conf:ro
+    networks:
+      - iotaps
+
+  mosquitto:
+    # mosquitto-go-auth ships Mosquitto 2.x with the go-auth plugin
+    # (/mosquitto/go-auth.so) preinstalled, enabling the per-org HTTP auth/ACL
+    # backend configured in infra/mosquitto/mosquitto.conf (Req 3.5).
+    image: iegomez/mosquitto-go-auth:latest
+    container_name: iotaps-mosquitto
+    restart: always
+    depends_on:
+      - fastapi-api
+    ports:
+      - "1883:1883"
+      - "9001:9001"
+    volumes:
+      - ./infra/mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - mosquitto_data:/mosquitto/data
+      - mosquitto_log:/mosquitto/log
+    networks:
+      - iotaps
+
+  postgres:
+    # TimescaleDB extension image: PostgreSQL with TimescaleDB preinstalled.
+    image: timescale/timescaledb:2.17.2-pg16
+    container_name: iotaps-postgres
+    restart: always
+    env_file:
+      - .env
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - iotaps
+
+  redis:
+    image: redis:7-alpine
+    container_name: iotaps-redis
+    restart: always
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD}"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - iotaps
+
+networks:
+  iotaps:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  redis_data:
+  mosquitto_data:
+  mosquitto_log:

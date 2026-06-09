@@ -1,0 +1,31 @@
+# IoTAPS backend dependencies (pinned). Expanded by later tasks as features land.
+fastapi==0.115.5
+uvicorn[standard]==0.32.1
+gunicorn==23.0.0
+pydantic==2.10.3
+pydantic-settings==2.7.0
+redis==5.2.1
+argon2-cffi==23.1.0
+
+# --- MQTT (Req 6.1, 30.1: MQTT_Listener worker) ---
+aiomqtt==2.3.0
+
+# --- Auth / security (Req 1: JWT, 2FA, Google OAuth, email validation) ---
+pyjwt==2.10.1
+pyotp==2.9.0
+google-auth==2.37.0
+email-validator==2.2.0
+
+# --- Device provisioning (Req 5.2: QR code generation) ---
+qrcode[pil]==8.0
+
+# --- Test dependencies ---
+httpx==0.28.1
+pytest==8.3.4
+pytest-asyncio==0.25.0
+hypothesis==6.122.3
+fakeredis==2.26.1
+# fakeredis Lua scripting (EVAL) for token-bucket rate-limit tests
+lupa==2.8
+# in-memory async DB for tenant/RBAC dependency tests
+aiosqlite==0.20.0

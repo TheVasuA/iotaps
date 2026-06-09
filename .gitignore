@@ -1,0 +1,49 @@
+# Environment / secrets
+.env
+*.env.local
+app/secrets/
+infra/nginx/certs/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.hypothesis/
+
+# Node / frontend
+node_modules/
+web/dist/
+web/.vite/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs / OS
+*.log
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Docker volumes (local dev)
+postgres_data/
+redis_data/
+mosquitto_data/
+mosquitto_log/
+
+# Seed scripts (dev-only, not for production)
+seed_*.py
+
+# Build artifacts
+*.egg
+dist/
+build/
+
+# Kiro
+.kiro/

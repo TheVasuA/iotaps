@@ -1,0 +1,10 @@
+Alembic migrations for the IoTAPS backend.
+
+Run from the `app/` directory:
+
+  alembic upgrade head      # apply all migrations
+  alembic downgrade -1      # roll back one revision
+  alembic revision --autogenerate -m "message"   # generate a new migration
+
+The database URL is taken from the DATABASE_URL environment variable; the
+migration environment coerces it to the psycopg2 (sync) driver automatically.
