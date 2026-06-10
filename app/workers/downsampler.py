@@ -168,40 +168,34 @@ async def refresh_aggregate(
     window_start: Optional[datetime],
     window_end: Optional[datetime],
 ) -> None:
-    """Refresh one continuous aggregate via ``refresh_continuous_aggregate``.
+    """Refresh one materialized view.
 
-    TimescaleDB forbids running the procedure inside a transaction block, so the
-    ``CALL`` is issued on an ``AUTOCOMMIT`` connection. The view name is checked
-    against :data:`_KNOWN_VIEWS` (an internal allowlist) before being inlined.
-
-    Availability/connection failures are re-raised as
-    :class:`TimescaleUnavailable` so the caller retains the schedule and retries;
-    all other errors propagate unchanged.
+    Since we use standard materialized views (not TimescaleDB continuous
+    aggregates), we simply call REFRESH MATERIALIZED VIEW CONCURRENTLY.
+    Falls back to non-concurrent if the view has no unique index.
     """
     if view not in _KNOWN_VIEWS:
-        raise ValueError(f"refusing to refresh unknown continuous aggregate: {view!r}")
+        raise ValueError(f"refusing to refresh unknown view: {view!r}")
 
     from sqlalchemy import text
     from sqlalchemy.exc import (
         DisconnectionError,
         InterfaceError,
         OperationalError,
+        ProgrammingError,
     )
 
     from app.db.session import engine
 
-    # View name comes from the allowlist above; timestamps are bound parameters.
-    stmt = text(
-        f"CALL refresh_continuous_aggregate('{view}', :window_start, :window_end)"
-    )
-    params = {"window_start": window_start, "window_end": window_end}
-
     try:
         async with engine.connect() as conn:
             conn = await conn.execution_options(isolation_level="AUTOCOMMIT")
-            await conn.execute(stmt, params)
+            try:
+                await conn.execute(text(f"REFRESH MATERIALIZED VIEW CONCURRENTLY {view}"))
+            except ProgrammingError:
+                # No unique index — fall back to non-concurrent refresh
+                await conn.execute(text(f"REFRESH MATERIALIZED VIEW {view}"))
     except (OperationalError, InterfaceError, DisconnectionError, ConnectionError, OSError) as exc:
-        # Connection/availability problems: retain the schedule and retry.
         raise TimescaleUnavailable(str(exc)) from exc
 
 
