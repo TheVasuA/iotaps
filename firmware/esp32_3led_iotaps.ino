@@ -25,13 +25,13 @@ const char* WIFI_SSID     = "admin";      // <-- Change this
 const char* WIFI_PASSWORD = "123456789";   // <-- Change this
 
 // IoTAPS connection
-const char* IOTAPS_SERVER = "157.51.92.102";        // Your local PC IP
+const char* IOTAPS_SERVER = "iotaps.com";            // Production server
 const int   IOTAPS_PORT   = 1883;                   // MQTT port
-const char* DEVICE_TOKEN  = "dT_cDW3aix7";         // Your device token
+const char* DEVICE_TOKEN  = "dT_HLrj6RXF";         // Your device token
 
 // Token is used as both MQTT username AND password
-const char* MQTT_USER = "dT_cDW3aix7";
-const char* MQTT_PASS = "dT_cDW3aix7";
+const char* MQTT_USER = "dT_HLrj6RXF";
+const char* MQTT_PASS = "dT_HLrj6RXF";
 
 // LED Pins
 #define LED1_PIN 2    // Built-in LED (blue)

@@ -72,10 +72,9 @@ services:
       - iotaps
 
   mosquitto:
-    # mosquitto-go-auth ships Mosquitto 2.x with the go-auth plugin
-    # (/mosquitto/go-auth.so) preinstalled, enabling the per-org HTTP auth/ACL
-    # backend configured in infra/mosquitto/mosquitto.conf (Req 3.5).
-    image: iegomez/mosquitto-go-auth:latest
+    # Eclipse Mosquitto 2.x — anonymous mode for dev/testing.
+    # For production with auth, use mosquitto-go-auth with HTTP backend.
+    image: eclipse-mosquitto:2
     container_name: iotaps-mosquitto
     restart: always
     depends_on:
