@@ -41,7 +41,6 @@ export default function LoginPage() {
           refreshToken: tokens.refresh_token,
         })
       );
-      toast.success("Signed in");
       navigate(redirectTo, { replace: true });
     },
     [dispatch, navigate, redirectTo]

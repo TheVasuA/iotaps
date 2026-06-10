@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import {
   provisionDevice,
+  fetchDevices,
   selectDeviceGroups,
 } from "@/store/devicesSlice";
 import QrDisplay from "./QrDisplay";
@@ -42,6 +43,8 @@ export default function ProvisioningWizard({ open, onClose }) {
   const handleClose = () => {
     reset();
     onClose?.();
+    // Refresh device list to show the new MQTT credentials
+    dispatch(fetchDevices({ groupId: undefined, status: undefined }));
   };
 
   const onCreate = async () => {
@@ -65,11 +68,11 @@ export default function ProvisioningWizard({ open, onClose }) {
   };
 
   const copySecret = async () => {
-    const secret = result?.mqtt_credentials?.secret;
-    if (!secret) return;
+    const token = result?.mqtt_credentials?.device_token || result?.device?.device_token;
+    if (!token) return;
     try {
-      await navigator.clipboard.writeText(secret);
-      toast.success("MQTT secret copied");
+      await navigator.clipboard.writeText(token);
+      toast.success("Device token copied");
     } catch {
       toast.error("Could not copy to clipboard");
     }
@@ -194,36 +197,31 @@ export default function ProvisioningWizard({ open, onClose }) {
             <div className="space-y-2 rounded-md border border-amber-500/40 bg-amber-500/10 p-4">
               <div className="flex items-center gap-2 text-sm font-medium text-amber-700 dark:text-amber-300">
                 <WarningCircle size={16} />
-                MQTT credentials (shown once)
+                Device Token (save this — used to connect)
               </div>
               <div className="grid gap-2 text-sm">
-                <div className="flex justify-between gap-4">
-                  <span className="text-muted-foreground">Username</span>
-                  <code className="font-mono">
-                    {result.mqtt_credentials.username}
-                  </code>
-                </div>
                 <div className="flex items-center justify-between gap-4">
-                  <span className="text-muted-foreground">Secret</span>
+                  <span className="text-muted-foreground">Token</span>
                   <span className="flex items-center gap-2">
-                    <code className="max-w-[14rem] truncate font-mono">
-                      {result.mqtt_credentials.secret || "(unavailable)"}
+                    <code className="max-w-[14rem] truncate font-mono text-xs bg-muted px-2 py-1 rounded">
+                      {result.mqtt_credentials?.device_token || result.device?.device_token || "(unavailable)"}
                     </code>
-                    {result.mqtt_credentials.secret ? (
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        className="h-7 w-7"
-                        onClick={copySecret}
-                        aria-label="Copy secret"
-                      >
-                        <Copy size={14} />
-                      </Button>
-                    ) : null}
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7"
+                      onClick={copySecret}
+                      aria-label="Copy token"
+                    >
+                      <Copy size={14} />
+                    </Button>
                   </span>
                 </div>
               </div>
+              <p className="text-[10px] text-muted-foreground mt-2">
+                Use this token as both MQTT username and password in your device firmware.
+              </p>
             </div>
 
             <div className="space-y-2">

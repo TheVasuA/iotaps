@@ -61,15 +61,14 @@ class DeviceOut(BaseModel):
     sim_interval_sec: int
     firmware_version: str | None
     template_id: str | None
+    device_token: str | None = None
 
 
 class MqttCredentialOut(BaseModel):
     id: str
-    username: str
+    device_token: str
     acl_pattern: str | None
     revoked: bool
-    # Returned exactly once at provisioning; never persisted in plaintext.
-    secret: str | None = None
 
 
 class CreateDeviceRequest(BaseModel):
@@ -130,7 +129,7 @@ class StartSimulatorRequest(BaseModel):
 # ---------------------------------------------------------------------------
 # Serialization helpers
 # ---------------------------------------------------------------------------
-def _device_out(device: Device) -> DeviceOut:
+def _device_out(device: Device, device_token: str | None = None) -> DeviceOut:
     return DeviceOut(
         id=str(device.id),
         org_id=str(device.org_id),
@@ -144,16 +143,16 @@ def _device_out(device: Device) -> DeviceOut:
         sim_interval_sec=device.sim_interval_sec,
         firmware_version=device.firmware_version,
         template_id=str(device.template_id) if device.template_id else None,
+        device_token=device_token,
     )
 
 
 def _credential_out(credential: MqttCredential, secret: str | None = None) -> MqttCredentialOut:
     return MqttCredentialOut(
         id=str(credential.id),
-        username=credential.username,
+        device_token=credential.token,
         acl_pattern=credential.acl_pattern,
         revoked=bool(credential.revoked),
-        secret=secret,
     )
 
 
@@ -171,10 +170,27 @@ async def list_devices(
     scope: TenantScope = Depends(tenant_scope),
     _: Principal = Depends(require_role(*_MANAGE_ROLES)),
 ) -> list[DeviceOut]:
-    """List devices in the caller's organization (Req 3.2)."""
+    """List devices in the caller's organization with MQTT credentials (Req 3.2)."""
     service = DeviceService(scope)
     devices = await service.list_devices(group_id=group_id, status=status_filter)
-    return [_device_out(d) for d in devices]
+
+    # Fetch device tokens for each device
+    from sqlalchemy import select
+    from app.models.device import MqttCredential
+    result_list = []
+    for d in devices:
+        cred_result = await scope.session.execute(
+            select(MqttCredential).where(
+                MqttCredential.device_id == d.id,
+                MqttCredential.revoked == False,
+            ).limit(1)
+        )
+        cred = cred_result.scalar_one_or_none()
+        result_list.append(_device_out(
+            d,
+            device_token=cred.token if cred else None,
+        ))
+    return result_list
 
 
 @router.post("", response_model=ProvisionDeviceResponse, status_code=201)
@@ -194,8 +210,8 @@ async def create_device(
     from app.services.device_service import build_qr_payload
 
     return ProvisionDeviceResponse(
-        device=_device_out(device),
-        mqtt_credentials=_credential_out(credential, secret=secret),
+        device=_device_out(device, device_token=credential.token),
+        mqtt_credentials=_credential_out(credential),
         qr=build_qr_payload(device),
     )
 

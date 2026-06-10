@@ -99,51 +99,51 @@
   }
 
   /* ===================================================================== */
-  /* Project_Center - LIGHT YELLOW (Req 4.2)                               */
-  /* Light mode: warm yellow accent on a clean white/cream background.     */
-  /* Dark mode: deeper warm tones.                                         */
+  /* Project_Center - LIGHT PURPLE (Req 4.2)                               */
+  /* Light mode: soft purple accent on clean white background.             */
+  /* Dark mode: deep purple tones.                                         */
   /* ===================================================================== */
   [data-theme="project-center"] {
-    --background: 45 50% 98%;
-    --foreground: 30 30% 12%;
+    --background: 270 40% 99%;
+    --foreground: 270 30% 12%;
     --card: 0 0% 100%;
-    --card-foreground: 30 30% 12%;
+    --card-foreground: 270 30% 12%;
     --popover: 0 0% 100%;
-    --popover-foreground: 30 30% 12%;
-    --primary: 45 90% 48%;
-    --primary-foreground: 30 40% 10%;
-    --secondary: 45 60% 94%;
-    --secondary-foreground: 30 30% 20%;
-    --muted: 45 30% 94%;
-    --muted-foreground: 30 15% 45%;
-    --accent: 45 60% 92%;
-    --accent-foreground: 30 30% 20%;
+    --popover-foreground: 270 30% 12%;
+    --primary: 270 60% 60%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 270 40% 95%;
+    --secondary-foreground: 270 30% 20%;
+    --muted: 270 20% 95%;
+    --muted-foreground: 270 12% 45%;
+    --accent: 270 40% 93%;
+    --accent-foreground: 270 30% 20%;
     --destructive: 0 84% 60%;
     --destructive-foreground: 0 0% 100%;
-    --border: 40 30% 88%;
-    --input: 40 30% 88%;
-    --ring: 45 90% 48%;
+    --border: 270 20% 90%;
+    --input: 270 20% 90%;
+    --ring: 270 60% 60%;
   }
   [data-theme="project-center"].dark {
-    --background: 30 25% 9%;
-    --foreground: 45 30% 95%;
-    --card: 30 22% 12%;
-    --card-foreground: 45 30% 95%;
-    --popover: 30 22% 12%;
-    --popover-foreground: 45 30% 95%;
-    --primary: 45 90% 55%;
-    --primary-foreground: 30 30% 8%;
-    --secondary: 35 20% 18%;
-    --secondary-foreground: 45 30% 95%;
-    --muted: 35 20% 18%;
-    --muted-foreground: 40 15% 65%;
-    --accent: 35 20% 22%;
-    --accent-foreground: 45 30% 95%;
+    --background: 270 25% 9%;
+    --foreground: 270 20% 95%;
+    --card: 270 22% 12%;
+    --card-foreground: 270 20% 95%;
+    --popover: 270 22% 12%;
+    --popover-foreground: 270 20% 95%;
+    --primary: 270 65% 68%;
+    --primary-foreground: 270 30% 8%;
+    --secondary: 270 18% 18%;
+    --secondary-foreground: 270 20% 95%;
+    --muted: 270 18% 18%;
+    --muted-foreground: 270 12% 65%;
+    --accent: 270 18% 22%;
+    --accent-foreground: 270 20% 95%;
     --destructive: 0 63% 31%;
-    --destructive-foreground: 45 30% 95%;
-    --border: 35 20% 22%;
-    --input: 35 20% 22%;
-    --ring: 45 90% 55%;
+    --destructive-foreground: 270 20% 95%;
+    --border: 270 18% 22%;
+    --input: 270 18% 22%;
+    --ring: 270 65% 68%;
   }
 
   /* ===================================================================== */

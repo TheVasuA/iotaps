@@ -74,6 +74,15 @@ def _generate_mqtt_secret() -> str:
     return secrets.token_urlsafe(24)
 
 
+def _generate_device_token() -> str:
+    """Generate a single device token (Blynk-style).
+
+    Format: dT_{8 chars alphanumeric} — short, easy to type, ~2.8 trillion combos.
+    Example: dT_A3f7B2k9
+    """
+    return f"dT_{secrets.token_urlsafe(6)}"
+
+
 class DeviceService:
     """Tenant-scoped operations over devices, groups, credentials, assignments."""
 
@@ -168,7 +177,7 @@ class DeviceService:
         # Enforce the per-plan device cap before creating anything (Req 15.1).
         await self._enforce_device_limit()
 
-        device_uid = device_uid or uuid.uuid4().hex
+        device_uid = device_uid or f"DEV-{secrets.token_hex(3).upper()}"
 
         device = Device(
             org_id=self._org_uuid,
@@ -187,12 +196,15 @@ class DeviceService:
         device.node_id = node.id
 
         # Unique per-device MQTT credentials, ACL scoped to the org (Req 3.5, 5.1).
-        plaintext_secret = _generate_mqtt_secret()
+        device_token = _generate_device_token()
+        plaintext_secret = device_token  # Token IS the secret
         credential = MqttCredential(
             org_id=self._org_uuid,
             device_id=device.id,
-            username=_new_mqtt_username(device_uid),
-            password_hash=password_service.hash_password(plaintext_secret),
+            token=device_token,
+            username=device_token,  # Token used as MQTT username
+            password_hash=password_service.hash_password(device_token),
+            password_plain=device_token,
             acl_pattern=org_acl_pattern(str(self._scope.org_id)),
             revoked=False,
         )

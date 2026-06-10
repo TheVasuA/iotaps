@@ -10,8 +10,8 @@ const channels = [
     icon: Envelope,
     title: "Email",
     description: "Reach our team for sales and general questions.",
-    value: "support@iotaps.in",
-    href: "mailto:support@iotaps.in",
+    value: "support@iotaps.com",
+    href: "mailto:support@iotaps.com",
   },
   {
     icon: ChatCircleText,

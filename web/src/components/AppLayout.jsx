@@ -15,6 +15,7 @@ import { logoutAndRevoke, selectUser, selectRole } from "@/store/authSlice";
 const navItems = [
   { to: "/dashboard", label: "Dashboard" },
   { to: "/devices", label: "Devices" },
+  { to: "/explorer", label: "IoT Explorer" },
   { to: "/flasher", label: "Flasher" },
   { to: "/rules", label: "Rules" },
   { to: "/billing", label: "Billing" },
@@ -87,6 +88,7 @@ export default function AppLayout() {
           </NavLink>
           <NotificationCenter />
           <ThemeModeToggle />
+          <span className="hidden text-sm text-muted-foreground sm:inline">{user?.email}</span>
           <Button variant="outline" size="sm" onClick={onLogout}>
             <SignOut size={16} />
             <span className="hidden sm:inline">Sign out</span>

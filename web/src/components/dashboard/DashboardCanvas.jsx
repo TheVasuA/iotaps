@@ -1,4 +1,4 @@
-import { useMemo, useState, useCallback } from "react";
+import { useMemo, useState, useCallback, useEffect } from "react";
 import {
   DndContext,
   closestCenter,
@@ -100,6 +100,11 @@ export default function DashboardCanvas({
 }) {
   const [localOrder, setLocalOrder] = useState(null);
   const [activeId, setActiveId] = useState(null);
+
+  // Clear local order when widgets change (new widget added/removed)
+  useEffect(() => {
+    setLocalOrder(null);
+  }, [widgets.length]);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } })

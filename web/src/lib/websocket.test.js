@@ -16,14 +16,14 @@ describe("buildWsUrl", () => {
   it("derives wss:// from an https origin", () => {
     const url = buildWsUrl("t", {
       apiBase: "/api/v1",
-      origin: "https://app.iotaps.io",
+      origin: "https://app.iotaps.com",
     });
-    expect(url).toBe("wss://app.iotaps.io/ws?token=t");
+    expect(url).toBe("wss://app.iotaps.com/ws?token=t");
   });
 
   it("supports an absolute https API base", () => {
-    const url = buildWsUrl("t", { apiBase: "https://api.iotaps.io/api/v1" });
-    expect(url).toBe("wss://api.iotaps.io/ws?token=t");
+    const url = buildWsUrl("t", { apiBase: "https://api.iotaps.com/api/v1" });
+    expect(url).toBe("wss://api.iotaps.com/ws?token=t");
   });
 
   it("omits the token query when no token is provided", () => {

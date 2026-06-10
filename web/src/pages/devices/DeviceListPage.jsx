@@ -6,7 +6,11 @@ import {
   MagnifyingGlass,
   ArrowClockwise,
   CircleNotch,
+  Copy,
+  Eye,
+  EyeSlash,
 } from "@phosphor-icons/react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -31,6 +35,55 @@ const STATUS_OPTIONS = [
   { value: "online", label: "Online" },
   { value: "offline", label: "Offline" },
 ];
+
+// Credential cell: trimmed value with copy + reveal toggle
+function CredentialCell({ value, secret }) {
+  const [revealed, setRevealed] = useState(false);
+  const hasValue = value && value !== "—";
+  const display = secret && !revealed ? "••••••••" : (value || "—");
+  const trimmed = display.length > 14 ? display.slice(0, 14) + "…" : display;
+
+  const handleCopy = (e) => {
+    e.stopPropagation();
+    if (!hasValue) return;
+    navigator.clipboard.writeText(value).then(() => {
+      toast.success("Copied to clipboard");
+    });
+  };
+
+  const handleToggle = (e) => {
+    e.stopPropagation();
+    setRevealed((r) => !r);
+  };
+
+  return (
+    <div className="flex items-center gap-1">
+      <code className="text-xs bg-muted px-1.5 py-0.5 rounded max-w-[110px] truncate" title={revealed ? value : undefined}>
+        {trimmed}
+      </code>
+      {secret && hasValue && (
+        <button
+          type="button"
+          onClick={handleToggle}
+          className="inline-flex h-5 w-5 items-center justify-center rounded text-muted-foreground hover:text-foreground"
+          title={revealed ? "Hide" : "Show"}
+        >
+          {revealed ? <EyeSlash size={12} /> : <Eye size={12} />}
+        </button>
+      )}
+      {hasValue && (
+        <button
+          type="button"
+          onClick={handleCopy}
+          className="inline-flex h-5 w-5 items-center justify-center rounded text-muted-foreground hover:text-foreground"
+          title="Copy"
+        >
+          <Copy size={12} />
+        </button>
+      )}
+    </div>
+  );
+}
 
 export default function DeviceListPage() {
   const dispatch = useAppDispatch();
@@ -150,24 +203,25 @@ export default function DeviceListPage() {
               <th className="px-4 py-3 font-medium">Status</th>
               <th className="px-4 py-3 font-medium">Group</th>
               <th className="px-4 py-3 font-medium">Maintenance</th>
+              <th className="px-4 py-3 font-medium">Device Token</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
             {status === "loading" ? (
               <tr>
-                <td colSpan={4} className="px-4 py-10 text-center text-muted-foreground">
+                <td colSpan={5} className="px-4 py-10 text-center text-muted-foreground">
                   <CircleNotch size={20} className="mx-auto animate-spin" />
                 </td>
               </tr>
             ) : status === "failed" ? (
               <tr>
-                <td colSpan={4} className="px-4 py-10 text-center text-destructive">
+                <td colSpan={5} className="px-4 py-10 text-center text-destructive">
                   {error || "Failed to load devices"}
                 </td>
               </tr>
             ) : visible.length === 0 ? (
               <tr>
-                <td colSpan={4} className="px-4 py-10 text-center text-muted-foreground">
+                <td colSpan={5} className="px-4 py-10 text-center text-muted-foreground">
                   {devices.length === 0
                     ? "No devices yet. Provision your first device."
                     : "No devices match your filters."}
@@ -204,6 +258,9 @@ export default function DeviceListPage() {
                     ) : (
                       <span className="text-muted-foreground">—</span>
                     )}
+                  </td>
+                  <td className="px-4 py-3">
+                    <CredentialCell value={d.device_token} secret />
                   </td>
                 </tr>
               ))

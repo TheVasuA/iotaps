@@ -22,6 +22,7 @@ import TwoFactorSetupPage from "@/pages/auth/TwoFactorSetupPage";
 import DeviceListPage from "@/pages/devices/DeviceListPage";
 import DeviceDetailPage from "@/pages/devices/DeviceDetailPage";
 import WebFlasherPage from "@/pages/devices/WebFlasherPage";
+import MqttExplorerPage from "@/pages/devices/MqttExplorerPage";
 import DashboardPage from "@/pages/dashboards/DashboardPage";
 import RuleListPage from "@/pages/rules/RuleListPage";
 import RuleEditorPage from "@/pages/rules/RuleEditorPage";
@@ -101,6 +102,10 @@ export const router = createBrowserRouter([
       {
         path: "flasher",
         element: <WebFlasherPage />,
+      },
+      {
+        path: "explorer",
+        element: <MqttExplorerPage />,
       },
       {
         path: "rules",

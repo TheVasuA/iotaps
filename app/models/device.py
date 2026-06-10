@@ -74,7 +74,7 @@ class Device(Base, TenantMixin, TimestampMixin):
 
 
 class MqttCredential(Base, TenantMixin):
-    """Per-device MQTT credentials with per-org ACL (Req 5.1, 5.9)."""
+    """Per-device authentication token (single Device Token, like Blynk)."""
 
     __tablename__ = "mqtt_credentials"
 
@@ -85,8 +85,13 @@ class MqttCredential(Base, TenantMixin):
         nullable=False,
         index=True,
     )
+    # Single device token — used as MQTT username; no separate password needed.
+    # Format: dT_{base64url} (32 chars). Unique across all devices.
+    token: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
+    # Legacy fields kept for backward compat; new devices use token only.
     username: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
     password_hash: Mapped[str] = mapped_column(Text, nullable=False)
+    password_plain: Mapped[str | None] = mapped_column(Text, nullable=True)
     # iotaps/{org_id}/#
     acl_pattern: Mapped[str | None] = mapped_column(Text, nullable=True)
     # (Req 5.9)
