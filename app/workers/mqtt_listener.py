@@ -78,25 +78,40 @@ class ParsedTopic:
 def parse_topic(topic: str) -> Optional[ParsedTopic]:
     """Parse a device topic into its parts, or ``None`` if it does not match.
 
-    A topic is valid only when it has exactly four segments, the first is the
-    ``iotaps`` root, the org/device segments are non-empty, and the final
-    segment is a known :class:`MessageType`. Anything else (wrong root, extra
-    segments, unknown type, empty ids) is rejected so malformed/untrusted
-    topics never reach the queue (design "treat all MQTT payloads as untrusted").
+    Supports two topic formats:
+    - Legacy: ``iotaps/{org_id}/{device_id}/{type}`` (4 segments)
+    - Token:  ``iotaps/{token}/{type}`` (3 segments) — new single-token approach
+    
+    For token-based topics, org_id is set to the token and device_id is set to
+    the token. The caller resolves the actual device from the token.
     """
     if not topic:
         return None
     parts = topic.split("/")
-    if len(parts) != 4:
-        return None
-    root, org_id, device_id, type_segment = parts
-    if root != TOPIC_ROOT or not org_id or not device_id:
-        return None
-    try:
-        message_type = MessageType(type_segment)
-    except ValueError:
-        return None
-    return ParsedTopic(org_id=org_id, device_id=device_id, message_type=message_type)
+    
+    # Token-based topic: iotaps/{token}/{type} (3 parts)
+    if len(parts) == 3:
+        root, token, type_segment = parts
+        if root != TOPIC_ROOT or not token:
+            return None
+        try:
+            message_type = MessageType(type_segment)
+        except ValueError:
+            return None
+        return ParsedTopic(org_id=token, device_id=token, message_type=message_type)
+    
+    # Legacy topic: iotaps/{org_id}/{device_id}/{type} (4 parts)
+    if len(parts) == 4:
+        root, org_id, device_id, type_segment = parts
+        if root != TOPIC_ROOT or not org_id or not device_id:
+            return None
+        try:
+            message_type = MessageType(type_segment)
+        except ValueError:
+            return None
+        return ParsedTopic(org_id=org_id, device_id=device_id, message_type=message_type)
+    
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -125,31 +140,39 @@ def _decode_json(payload: bytes | str) -> Optional[dict[str, Any]]:
 def validate_telemetry_payload(payload: bytes | str) -> Optional[dict[str, Any]]:
     """Validate a telemetry payload against the contract, or return ``None``.
 
-    Contract: ``{"ts": "<iso8601>", "data": {"<key>": <number>, ...}}``.
-    Requirements:
-    - top-level JSON object
-    - ``ts`` present and a non-empty string
-    - ``data`` present, a non-empty object whose values are all numbers
-      (bools are rejected since ``bool`` is a numeric subtype in Python)
+    Supports two formats:
+    - Strict: ``{"ts": "<iso8601>", "data": {"<key>": <number>, ...}}``
+    - Simple: ``{"<key>": <number>, ...}`` (ESP32 sends this directly)
+    
+    For simple format, wraps it with a generated timestamp.
     """
     obj = _decode_json(payload)
     if obj is None:
         return None
 
+    # Check for strict format first
     ts = obj.get("ts")
-    if not isinstance(ts, str) or not ts.strip():
-        return None
-
     data = obj.get("data")
-    if not isinstance(data, dict) or not data:
-        return None
-    for key, value in data.items():
-        if not isinstance(key, str) or not key:
-            return None
-        if isinstance(value, bool) or not isinstance(value, (int, float)):
-            return None
+    if isinstance(ts, str) and ts.strip() and isinstance(data, dict) and data:
+        # Validate data values are numbers
+        for key, value in data.items():
+            if not isinstance(key, str) or not key:
+                return None
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                return None
+        return obj
 
-    return obj
+    # Simple format: the entire object is the data (from ESP32)
+    # Generate timestamp and wrap it
+    from datetime import datetime, timezone
+    has_numeric = any(isinstance(v, (int, float)) and not isinstance(v, bool) for v in obj.values())
+    if has_numeric:
+        return {
+            "ts": datetime.now(timezone.utc).isoformat(),
+            "data": {k: v for k, v in obj.items() if isinstance(v, (int, float)) and not isinstance(v, bool)},
+        }
+
+    return None
 
 
 def validate_status_payload(payload: bytes | str) -> Optional[str]:
@@ -218,12 +241,8 @@ async def handle_status(
 ) -> Optional[str]:
     """Track device presence from a status/LWT message into ONLINE_DEVICES.
 
-    ``online`` adds the device id to the set; ``offline`` removes it. The
-    parsed device-scoped event is also published so the WebSocket gateway (5.5)
-    can surface presence changes. When a device comes ``online`` and a
-    ``publisher`` is supplied, any commands queued while it was offline are
-    flushed and transitioned QUEUED -> SENT (Req 9.6). Returns the applied
-    status or ``None`` when the payload was invalid.
+    ``online`` adds the device id to the set; ``offline`` removes it. Also
+    updates the device status in the database when using token-based topics.
     """
     status = validate_status_payload(payload)
     if status is None:
@@ -236,20 +255,43 @@ async def handle_status(
     if status == _ONLINE:
         await redis.sadd(rk.ONLINE_DEVICES, parsed.device_id)
         if publisher is not None:
-            # Flush commands queued while the device was offline (Req 9.6).
             try:
                 from app.services.command_service import flush_queued_commands
 
                 await flush_queued_commands(
                     redis, parsed.org_id, parsed.device_id, publisher
                 )
-            except Exception:  # pragma: no cover - flush must not break presence
+            except Exception:
                 logger.exception(
                     "command_flush_failed",
                     extra={"org_id": parsed.org_id, "device_id": parsed.device_id},
                 )
     else:
         await redis.srem(rk.ONLINE_DEVICES, parsed.device_id)
+
+    # Update device status in the database (token-based lookup)
+    try:
+        from app.db.session import async_session_factory
+        from app.models.device import Device, MqttCredential
+        from sqlalchemy import select, update
+
+        async with async_session_factory() as session:
+            # Find device by token
+            result = await session.execute(
+                select(MqttCredential.device_id).where(
+                    MqttCredential.token == parsed.device_id,
+                    MqttCredential.revoked == False,
+                )
+            )
+            row = result.first()
+            if row:
+                await session.execute(
+                    update(Device).where(Device.id == row[0]).values(status=status)
+                )
+                await session.commit()
+                logger.info("device_status_updated", extra={"token": parsed.device_id, "status": status})
+    except Exception:
+        logger.exception("device_status_db_update_failed", extra={"token": parsed.device_id})
 
     await redis.publish(
         rk.device_channel(parsed.device_id),
@@ -321,12 +363,15 @@ async def dispatch(
 # ---------------------------------------------------------------------------
 # Live client loop
 # ---------------------------------------------------------------------------
-# Topics the backend listener subscribes to. COMMAND is intentionally absent
-# (it flows broker -> device).
+# Topics the backend listener subscribes to. Covers both legacy (4-segment)
+# and token-based (3-segment) topic formats.
 _SUBSCRIPTIONS = (
-    ALL_TELEMETRY_SUBSCRIPTION,
-    ALL_STATUS_SUBSCRIPTION,
-    ALL_ACK_SUBSCRIPTION,
+    ALL_TELEMETRY_SUBSCRIPTION,          # iotaps/+/+/telemetry
+    ALL_STATUS_SUBSCRIPTION,             # iotaps/+/+/status
+    ALL_ACK_SUBSCRIPTION,                # iotaps/+/+/ack
+    f"{TOPIC_ROOT}/+/telemetry",         # iotaps/{token}/telemetry
+    f"{TOPIC_ROOT}/+/status",            # iotaps/{token}/status
+    f"{TOPIC_ROOT}/+/ack",               # iotaps/{token}/ack
 )
 
 
