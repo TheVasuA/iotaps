@@ -135,13 +135,13 @@ def policy_for_plan(plan: Optional[str]) -> RetentionPolicy:
 # ever done from this fixed set, never from user input.
 RAW_TABLE = "telemetry"
 RAW_TIME_COLUMN = "ts"
-HOURLY_VIEW = "telemetry_1h"
-HOURLY_TIME_COLUMN = "bucket"
+# Note: telemetry_1h/5m/1d are materialized views and cannot be deleted from.
+# Data retention only applies to the raw telemetry hypertable.
+# The materialized views are refreshed by the downsampler worker.
 
 _KNOWN_TARGETS: frozenset[tuple[str, str]] = frozenset(
     {
         (RAW_TABLE, RAW_TIME_COLUMN),
-        (HOURLY_VIEW, HOURLY_TIME_COLUMN),
     }
 )
 
@@ -165,14 +165,12 @@ class PurgeOp:
 def plan_purge_ops(org_id: str, plan: Optional[str], now: datetime) -> list[PurgeOp]:
     """Build the purge operations for one org under its plan's policy.
 
-    Computes an absolute cutoff per tier (``now - max_age``) so the raw
-    hypertable and the hourly aggregate are each trimmed to the plan's window
-    (Req 6.7, 6.8, 15.1).
+    Only purges the raw telemetry hypertable. Materialized views are managed
+    by the downsampler worker (refresh) and don't need direct deletion.
     """
     policy = policy_for_plan(plan)
     return [
         PurgeOp(RAW_TABLE, RAW_TIME_COLUMN, org_id, now - policy.raw_max_age),
-        PurgeOp(HOURLY_VIEW, HOURLY_TIME_COLUMN, org_id, now - policy.hourly_max_age),
     ]
 
 
