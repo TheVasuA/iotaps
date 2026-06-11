@@ -38,6 +38,8 @@ services:
         condition: service_healthy
     expose:
       - "8000"
+    ports:
+      - "8000:8000"
     command: >
       gunicorn app.main:app
       --workers ${API_WORKERS:-4}
