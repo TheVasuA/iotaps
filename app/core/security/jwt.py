@@ -266,9 +266,10 @@ async def rotate_refresh_token(
     user_id = str(payload["sub"])
     org_id = str(payload.get("org_id", ""))
     role = str(payload.get("role", ""))
+    email = str(payload.get("email", ""))
 
     access = create_access_token(
-        user_id=user_id, org_id=org_id, role=role, settings=settings, now=now
+        user_id=user_id, org_id=org_id, role=role, email=email, settings=settings, now=now
     )
     new_refresh = await issue_refresh_token(
         redis,
