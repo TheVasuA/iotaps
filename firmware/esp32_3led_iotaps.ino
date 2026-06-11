@@ -225,17 +225,20 @@ void onCommand(char* topic, byte* payload, unsigned int length) {
   // Handle on/off commands from dashboard widgets (no target = all LEDs or led1 default)
   else if (strcmp(type, "on") == 0 || strcmp(type, "off") == 0) {
     bool turnOn = (strcmp(type, "on") == 0);
-    if (strlen(target) == 0 || strcmp(target, "led1") == 0) {
+    if (strlen(target) == 0) {
+      // No target specified — toggle led1 by default
       led1State = turnOn;
       digitalWrite(LED1_PIN, led1State ? HIGH : LOW);
       executed = true;
-    }
-    if (strcmp(target, "led2") == 0) {
+    } else if (strcmp(target, "led1") == 0) {
+      led1State = turnOn;
+      digitalWrite(LED1_PIN, led1State ? HIGH : LOW);
+      executed = true;
+    } else if (strcmp(target, "led2") == 0) {
       led2State = turnOn;
       digitalWrite(LED2_PIN, led2State ? HIGH : LOW);
       executed = true;
-    }
-    if (strcmp(target, "led3") == 0) {
+    } else if (strcmp(target, "led3") == 0) {
       led3State = turnOn;
       digitalWrite(LED3_PIN, led3State ? HIGH : LOW);
       executed = true;
