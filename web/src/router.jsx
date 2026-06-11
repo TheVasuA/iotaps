@@ -1,85 +1,99 @@
+import { lazy, Suspense } from "react";
 import { createBrowserRouter } from "react-router-dom";
 import AppLayout from "@/components/AppLayout";
 import RequireAuth from "@/components/RequireAuth";
-import PublicLayout from "@/components/public/PublicLayout";
-import Placeholder from "@/pages/Placeholder";
-import LandingPage from "@/pages/public/LandingPage";
-import PricingPage from "@/pages/public/PricingPage";
-import AboutPage from "@/pages/public/AboutPage";
-import ContactPage from "@/pages/public/ContactPage";
-import DocsPage from "@/pages/public/DocsPage";
-import TermsPage from "@/pages/public/TermsPage";
-import PrivacyPage from "@/pages/public/PrivacyPage";
-import RefundPolicyPage from "@/pages/public/RefundPolicyPage";
-import StatusPage from "@/pages/public/StatusPage";
-import FaqPage from "@/pages/public/FaqPage";
-import ChangelogPage from "@/pages/public/ChangelogPage";
-import LoginPage from "@/pages/auth/LoginPage";
-import RegisterPage from "@/pages/auth/RegisterPage";
-import ForgotPasswordPage from "@/pages/auth/ForgotPasswordPage";
-import ResetPasswordPage from "@/pages/auth/ResetPasswordPage";
-import TwoFactorSetupPage from "@/pages/auth/TwoFactorSetupPage";
-import DeviceListPage from "@/pages/devices/DeviceListPage";
-import DeviceDetailPage from "@/pages/devices/DeviceDetailPage";
-import WebFlasherPage from "@/pages/devices/WebFlasherPage";
-import MqttExplorerPage from "@/pages/devices/MqttExplorerPage";
-import DashboardPage from "@/pages/dashboards/DashboardPage";
-import RuleListPage from "@/pages/rules/RuleListPage";
-import RuleEditorPage from "@/pages/rules/RuleEditorPage";
-import BillingPage from "@/pages/billing/BillingPage";
-import ReferralPage from "@/pages/referrals/ReferralPage";
-import WalletPage from "@/pages/partner/WalletPage";
-import SupportChatPage from "@/pages/support/SupportChatPage";
-import AdminLayout from "@/pages/admin/AdminLayout";
-import OverviewPanel from "@/pages/admin/OverviewPanel";
-import CompaniesPanel from "@/pages/admin/CompaniesPanel";
-import MqttNodesPanel from "@/pages/admin/MqttNodesPanel";
-import RevenuePanel from "@/pages/admin/RevenuePanel";
-import CouponsPanel from "@/pages/admin/CouponsPanel";
-import ContentPanel from "@/pages/admin/ContentPanel";
-import HealthPanel from "@/pages/admin/HealthPanel";
-import SecurityPanel from "@/pages/admin/SecurityPanel";
 import RequireRole from "@/components/RequireRole";
 
-// Routing.
-//   - Public informational website (Req 31): "/" + /pricing, /about, /contact,
-//     /docs, /terms, /privacy, /refund-policy, /status, /faq, /changelog under
-//     PublicLayout (no auth, task 21.1).
-//   - Auth screens (task 2.8) are public.
-//   - The authenticated app shell is a pathless layout guarded by RequireAuth;
-//     its routes (/dashboard, /devices, ...) are unchanged.
-//   - /public/d/:token -> task 8.3 (public read-only dashboard).
+// Lightweight loading spinner
+function PageLoader() {
+  return (
+    <div className="flex min-h-[50vh] items-center justify-center">
+      <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+    </div>
+  );
+}
+
+// Lazy wrapper
+function L(importFn) {
+  const Component = lazy(importFn);
+  return (
+    <Suspense fallback={<PageLoader />}>
+      <Component />
+    </Suspense>
+  );
+}
+
+// Public pages — lazy loaded
+const PublicLayout = lazy(() => import("@/components/public/PublicLayout"));
+const LandingPage = lazy(() => import("@/pages/public/LandingPage"));
+const PricingPage = lazy(() => import("@/pages/public/PricingPage"));
+const AboutPage = lazy(() => import("@/pages/public/AboutPage"));
+const ContactPage = lazy(() => import("@/pages/public/ContactPage"));
+const DocsPage = lazy(() => import("@/pages/public/DocsPage"));
+const TermsPage = lazy(() => import("@/pages/public/TermsPage"));
+const PrivacyPage = lazy(() => import("@/pages/public/PrivacyPage"));
+const RefundPolicyPage = lazy(() => import("@/pages/public/RefundPolicyPage"));
+const StatusPage = lazy(() => import("@/pages/public/StatusPage"));
+const FaqPage = lazy(() => import("@/pages/public/FaqPage"));
+const ChangelogPage = lazy(() => import("@/pages/public/ChangelogPage"));
+
+// Auth pages
+const LoginPage = lazy(() => import("@/pages/auth/LoginPage"));
+const RegisterPage = lazy(() => import("@/pages/auth/RegisterPage"));
+const ForgotPasswordPage = lazy(() => import("@/pages/auth/ForgotPasswordPage"));
+const ResetPasswordPage = lazy(() => import("@/pages/auth/ResetPasswordPage"));
+const TwoFactorSetupPage = lazy(() => import("@/pages/auth/TwoFactorSetupPage"));
+
+// App pages — lazy loaded (heaviest)
+const DashboardPage = lazy(() => import("@/pages/dashboards/DashboardPage"));
+const DeviceListPage = lazy(() => import("@/pages/devices/DeviceListPage"));
+const DeviceDetailPage = lazy(() => import("@/pages/devices/DeviceDetailPage"));
+const WebFlasherPage = lazy(() => import("@/pages/devices/WebFlasherPage"));
+const MqttExplorerPage = lazy(() => import("@/pages/devices/MqttExplorerPage"));
+const RuleListPage = lazy(() => import("@/pages/rules/RuleListPage"));
+const RuleEditorPage = lazy(() => import("@/pages/rules/RuleEditorPage"));
+const BillingPage = lazy(() => import("@/pages/billing/BillingPage"));
+const ReferralPage = lazy(() => import("@/pages/referrals/ReferralPage"));
+const WalletPage = lazy(() => import("@/pages/partner/WalletPage"));
+const SupportChatPage = lazy(() => import("@/pages/support/SupportChatPage"));
+
+// Admin pages
+const AdminLayout = lazy(() => import("@/pages/admin/AdminLayout"));
+const OverviewPanel = lazy(() => import("@/pages/admin/OverviewPanel"));
+const CompaniesPanel = lazy(() => import("@/pages/admin/CompaniesPanel"));
+const MqttNodesPanel = lazy(() => import("@/pages/admin/MqttNodesPanel"));
+const RevenuePanel = lazy(() => import("@/pages/admin/RevenuePanel"));
+const CouponsPanel = lazy(() => import("@/pages/admin/CouponsPanel"));
+const ContentPanel = lazy(() => import("@/pages/admin/ContentPanel"));
+const HealthPanel = lazy(() => import("@/pages/admin/HealthPanel"));
+const SecurityPanel = lazy(() => import("@/pages/admin/SecurityPanel"));
+
 export const router = createBrowserRouter([
   {
     path: "/",
-    element: <PublicLayout />,
+    element: (
+      <Suspense fallback={<PageLoader />}>
+        <PublicLayout />
+      </Suspense>
+    ),
     children: [
-      { index: true, element: <LandingPage /> },
-      { path: "pricing", element: <PricingPage /> },
-      { path: "about", element: <AboutPage /> },
-      { path: "contact", element: <ContactPage /> },
-      { path: "docs", element: <DocsPage /> },
-      { path: "terms", element: <TermsPage /> },
-      { path: "privacy", element: <PrivacyPage /> },
-      { path: "refund-policy", element: <RefundPolicyPage /> },
-      { path: "status", element: <StatusPage /> },
-      { path: "faq", element: <FaqPage /> },
-      { path: "changelog", element: <ChangelogPage /> },
+      { index: true, element: L(() => import("@/pages/public/LandingPage")) },
+      { path: "pricing", element: L(() => import("@/pages/public/PricingPage")) },
+      { path: "about", element: L(() => import("@/pages/public/AboutPage")) },
+      { path: "contact", element: L(() => import("@/pages/public/ContactPage")) },
+      { path: "docs", element: L(() => import("@/pages/public/DocsPage")) },
+      { path: "terms", element: L(() => import("@/pages/public/TermsPage")) },
+      { path: "privacy", element: L(() => import("@/pages/public/PrivacyPage")) },
+      { path: "refund-policy", element: L(() => import("@/pages/public/RefundPolicyPage")) },
+      { path: "status", element: L(() => import("@/pages/public/StatusPage")) },
+      { path: "faq", element: L(() => import("@/pages/public/FaqPage")) },
+      { path: "changelog", element: L(() => import("@/pages/public/ChangelogPage")) },
     ],
   },
-  { path: "/login", element: <LoginPage /> },
-  { path: "/register", element: <RegisterPage /> },
-  { path: "/forgot-password", element: <ForgotPasswordPage /> },
-  { path: "/reset-password", element: <ResetPasswordPage /> },
-  {
-    path: "/public/d/:token",
-    element: (
-      <Placeholder
-        title="Public dashboard"
-        note="Read-only public dashboards are built in task 8.3."
-      />
-    ),
-  },
+  { path: "/login", element: L(() => import("@/pages/auth/LoginPage")) },
+  { path: "/register", element: L(() => import("@/pages/auth/RegisterPage")) },
+  { path: "/forgot-password", element: L(() => import("@/pages/auth/ForgotPasswordPage")) },
+  { path: "/reset-password", element: L(() => import("@/pages/auth/ResetPasswordPage")) },
   {
     element: (
       <RequireAuth>
@@ -87,74 +101,47 @@ export const router = createBrowserRouter([
       </RequireAuth>
     ),
     children: [
-      {
-        path: "dashboard",
-        element: <DashboardPage />,
-      },
-      {
-        path: "devices",
-        element: <DeviceListPage />,
-      },
-      {
-        path: "devices/:id",
-        element: <DeviceDetailPage />,
-      },
-      {
-        path: "flasher",
-        element: <WebFlasherPage />,
-      },
-      {
-        path: "explorer",
-        element: <MqttExplorerPage />,
-      },
-      {
-        path: "rules",
-        element: <RuleListPage />,
-      },
-      {
-        path: "rules/:id",
-        element: <RuleEditorPage />,
-      },
-      {
-        path: "billing",
-        element: <BillingPage />,
-      },
-      {
-        path: "referrals",
-        element: <ReferralPage />,
-      },
-      {
-        path: "wallet",
-        element: <WalletPage />,
-      },
-      {
-        path: "support",
-        element: <SupportChatPage />,
-      },
-      { path: "security/2fa", element: <TwoFactorSetupPage /> },
+      { path: "dashboard", element: L(() => import("@/pages/dashboards/DashboardPage")) },
+      { path: "devices", element: L(() => import("@/pages/devices/DeviceListPage")) },
+      { path: "devices/:id", element: L(() => import("@/pages/devices/DeviceDetailPage")) },
+      { path: "flasher", element: L(() => import("@/pages/devices/WebFlasherPage")) },
+      { path: "explorer", element: L(() => import("@/pages/devices/MqttExplorerPage")) },
+      { path: "rules", element: L(() => import("@/pages/rules/RuleListPage")) },
+      { path: "rules/:id", element: L(() => import("@/pages/rules/RuleEditorPage")) },
+      { path: "billing", element: L(() => import("@/pages/billing/BillingPage")) },
+      { path: "referrals", element: L(() => import("@/pages/referrals/ReferralPage")) },
+      { path: "wallet", element: L(() => import("@/pages/partner/WalletPage")) },
+      { path: "support", element: L(() => import("@/pages/support/SupportChatPage")) },
+      { path: "security/2fa", element: L(() => import("@/pages/auth/TwoFactorSetupPage")) },
       {
         path: "admin",
         element: (
           <RequireRole role="super_admin">
-            <AdminLayout />
+            <Suspense fallback={<PageLoader />}>
+              <AdminLayout />
+            </Suspense>
           </RequireRole>
         ),
         children: [
-          { index: true, element: <OverviewPanel /> },
-          { path: "companies", element: <CompaniesPanel /> },
-          { path: "mqtt-nodes", element: <MqttNodesPanel /> },
-          { path: "revenue", element: <RevenuePanel /> },
-          { path: "coupons", element: <CouponsPanel /> },
-          { path: "content", element: <ContentPanel /> },
-          { path: "health", element: <HealthPanel /> },
-          { path: "security", element: <SecurityPanel /> },
+          { index: true, element: L(() => import("@/pages/admin/OverviewPanel")) },
+          { path: "companies", element: L(() => import("@/pages/admin/CompaniesPanel")) },
+          { path: "mqtt-nodes", element: L(() => import("@/pages/admin/MqttNodesPanel")) },
+          { path: "revenue", element: L(() => import("@/pages/admin/RevenuePanel")) },
+          { path: "coupons", element: L(() => import("@/pages/admin/CouponsPanel")) },
+          { path: "content", element: L(() => import("@/pages/admin/ContentPanel")) },
+          { path: "health", element: L(() => import("@/pages/admin/HealthPanel")) },
+          { path: "security", element: L(() => import("@/pages/admin/SecurityPanel")) },
         ],
       },
     ],
   },
   {
     path: "*",
-    element: <Placeholder title="Not found" note="The requested page does not exist." />,
+    element: (
+      <div className="flex min-h-screen items-center justify-center text-muted-foreground">
+        Page not found
+      </div>
+    ),
   },
 ]);
 
