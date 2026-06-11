@@ -270,6 +270,7 @@ async def handle_status(
         await redis.srem(rk.ONLINE_DEVICES, parsed.device_id)
 
     # Update device status in the database (token-based lookup)
+    device_uuid = None
     try:
         from app.db.session import async_session_factory
         from app.models.device import Device, MqttCredential
@@ -285,17 +286,21 @@ async def handle_status(
             )
             row = result.first()
             if row:
+                device_uuid = str(row[0])
                 await session.execute(
                     update(Device).where(Device.id == row[0]).values(status=status)
                 )
                 await session.commit()
-                logger.info("device_status_updated", extra={"token": parsed.device_id, "status": status})
+                logger.info("device_status_updated", extra={"token": parsed.device_id, "device_id": device_uuid, "status": status})
     except Exception:
         logger.exception("device_status_db_update_failed", extra={"token": parsed.device_id})
 
+    # Publish on the device UUID channel so the WebSocket gateway delivers
+    # real-time status updates to subscribed frontend clients.
+    publish_id = device_uuid or parsed.device_id
     await redis.publish(
-        rk.device_channel(parsed.device_id),
-        json.dumps({"type": "status", "device_id": parsed.device_id, "status": status}),
+        rk.device_channel(publish_id),
+        json.dumps({"type": "status", "device_id": publish_id, "status": status}),
     )
     return status
 

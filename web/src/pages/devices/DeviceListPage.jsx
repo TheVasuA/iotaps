@@ -103,6 +103,13 @@ export default function DeviceListPage() {
     dispatch(
       fetchDevices({ groupId: filters.groupId, status: filters.status })
     );
+    // Poll every 30s so device online/offline status stays fresh.
+    const interval = setInterval(() => {
+      dispatch(
+        fetchDevices({ groupId: filters.groupId, status: filters.status })
+      );
+    }, 30000);
+    return () => clearInterval(interval);
   }, [dispatch, filters.groupId, filters.status]);
 
   const groupName = (id) => groups.find((g) => g.id === id)?.name;
