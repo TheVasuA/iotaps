@@ -40,7 +40,7 @@ from typing import Any, Awaitable, Callable, Optional
 from app.core import redis_keys as rk
 from app.core.errors import AppError, NotFoundError, ValidationError
 from app.core.logging import get_logger
-from app.core.mqtt_topics import command_topic
+from app.core.mqtt_topics import command_topic, token_command_topic
 from app.core.security.tenant import TenantScope
 from app.models.device import Device
 from app.models.ops import ActivityLog
@@ -291,9 +291,31 @@ async def flush_queued_commands(
     queue), publishes it to the device's MQTT command topic, and transitions its
     status record to SENT. Returns the flushed records in delivery order.
     """
-    topic = command_topic(org_id, device_id)
+    # device_id here is the token (from the 3-segment topic). Use token-based topic.
+    topic = token_command_topic(device_id)
     flushed: list[CommandRecord] = []
-    queue_key = rk.command_queue_key(device_id)
+
+    # Resolve the device UUID for the queue key (queued by UUID)
+    queue_device_id = device_id
+    try:
+        from app.db.session import async_session_factory
+        from app.models.device import MqttCredential
+        from sqlalchemy import select
+
+        async with async_session_factory() as session:
+            result = await session.execute(
+                select(MqttCredential.device_id).where(
+                    MqttCredential.token == device_id,
+                    MqttCredential.revoked == False,
+                )
+            )
+            row = result.first()
+            if row:
+                queue_device_id = str(row[0])
+    except Exception:
+        pass
+
+    queue_key = rk.command_queue_key(queue_device_id)
     while True:
         raw = await redis.lpop(queue_key)
         if raw is None:
@@ -399,7 +421,21 @@ class CommandService:
         if online:
             # Publish first; persist + log only once delivery to the broker
             # succeeded so a publish failure does not leave a phantom SENT.
-            topic = command_topic(str(device.org_id), str(device.id))
+            # Use token-based topic: iotaps/{token}/command (matches firmware)
+            from app.models.device import MqttCredential
+            from sqlalchemy import select
+
+            cred_result = await self._session.execute(
+                select(MqttCredential.token).where(
+                    MqttCredential.device_id == device.id,
+                    MqttCredential.revoked == False,
+                )
+            )
+            cred_row = cred_result.first()
+            if cred_row:
+                topic = token_command_topic(cred_row[0])
+            else:
+                topic = command_topic(str(device.org_id), str(device.id))
             await self._publisher(topic, _command_mqtt_payload(record))
             await _save_record(self._redis, record)
             if ack_timeout_seconds > 0:

@@ -37,6 +37,8 @@ import WidgetSettingsDialog from "@/components/dashboard/WidgetSettingsDialog";
 import { defaultConfigFor, defaultLayoutFor } from "@/lib/widgets";
 import useDashboardTelemetry from "@/lib/useDashboardTelemetry";
 import wsManager from "@/lib/websocket";
+import { issueCommand } from "@/lib/commandsApi";
+import { extractApiError } from "@/lib/authApi";
 
 // Dashboard canvas page (Task 8.2, Req 7). Composes the dashboard selector,
 // the React Grid Layout canvas, the 8 widget types, and the live WebSocket
@@ -224,14 +226,26 @@ export default function DashboardPage() {
     [dispatch, current, configWidget]
   );
 
-  // Control-widget command emission. The command transport (POST
-  // /devices/{id}/commands + ACK toasts) lands in task 9.3; here we surface the
-  // intent so the widgets are fully interactive on the canvas.
-  const handleCommand = useCallback((cmd) => {
-    toast.message(
-      `Command ${cmd.type}${cmd.value != null ? ` (${cmd.value})` : ""} queued`,
-      { description: `Device ${cmd.deviceId}` }
-    );
+  // Control-widget command emission. Sends the command to the backend which
+  // publishes it to the device via MQTT (Req 9.1, 9.2).
+  const handleCommand = useCallback(async (cmd) => {
+    if (!cmd.deviceId) {
+      toast.error("No device bound to this widget");
+      return;
+    }
+    try {
+      const result = await issueCommand(cmd.deviceId, {
+        type: cmd.type,
+        value: cmd.value,
+      });
+      if (result.status === "QUEUED") {
+        toast.info("Command queued — device is offline, will execute on reconnect");
+      } else {
+        toast.success("Command sent to device");
+      }
+    } catch (err) {
+      toast.error(extractApiError(err).message || "Failed to send command");
+    }
   }, []);
 
   // --- Render ------------------------------------------------------------

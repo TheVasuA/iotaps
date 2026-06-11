@@ -32,3 +32,46 @@ Never run docker-compose down -v — the -v flag deletes volumes (your data). Us
 
 Back up before deploy:
 docker exec iotaps-postgres pg_dump -U iotaps iotaps > backup_$(date +%Y%m%d).sql
+
+Turn LED1 ON:
+docker exec iotaps-mosquitto mosquitto_pub -t "iotaps/dT_cDW3aix7/command" -m "{\"type\":\"toggle\",\"target\":\"led1\",\"value\":1,\"command_id\":\"test1\"}"
+
+Turn LED2 ON:
+docker exec iotaps-mosquitto mosquitto_pub -t "iotaps/dT_cDW3aix7/command" -m "{\"type\":\"toggle\",\"target\":\"led2\",\"value\":1,\"command_id\":\"test3\"}"
+
+Turn LED3 ON:
+docker exec iotaps-mosquitto mosquitto_pub -t "iotaps/dT_cDW3aix7/command" -m "{\"type\":\"toggle\",\"target\":\"led3\",\"value\":1,\"command_id\":\"test4\"}"
+
+To watch what your ESP32 is sending (telemetry):
+docker exec iotaps-mosquitto mosquitto_sub -t "iotaps/dT_cDW3aix7/telemetry" -v
+
+Then run directly:
+mosquitto_pub -h localhost -t "iotaps/dT_cDW3aix7/command" -m "{\"type\":\"toggle\",\"target\":\"led1\",\"value\":1,\"command_id\":\"test1\"}"
+
+
+
+
+cd /path/to/iotaps
+git pull origin main
+
+# Open firewall for MQTT
+sudo ufw allow 1883/tcp
+sudo ufw allow 9001/tcp
+sudo ufw reload
+
+# Or if using iptables:
+# sudo iptables -A INPUT -p tcp --dport 1883 -j ACCEPT
+# sudo iptables -A INPUT -p tcp --dport 9001 -j ACCEPT
+
+# Rebuild and restart everything
+docker compose build fastapi-api
+cd web && npm install && npm run build && cd ..
+docker compose down
+docker compose up -d
+
+# Run migrations
+sleep 10
+docker exec -w /srv/app iotaps-api alembic upgrade head
+
+# Verify mosquitto is listening
+docker logs iotaps-mosquitto --tail 5

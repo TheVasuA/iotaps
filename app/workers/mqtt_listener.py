@@ -254,6 +254,27 @@ async def handle_status(
 
     if status == _ONLINE:
         await redis.sadd(rk.ONLINE_DEVICES, parsed.device_id)
+        # Also track by device UUID if we can resolve it
+        device_uuid = None
+        try:
+            from app.db.session import async_session_factory
+            from app.models.device import MqttCredential
+            from sqlalchemy import select
+
+            async with async_session_factory() as session:
+                result = await session.execute(
+                    select(MqttCredential.device_id).where(
+                        MqttCredential.token == parsed.device_id,
+                        MqttCredential.revoked == False,
+                    )
+                )
+                row = result.first()
+                if row:
+                    device_uuid = str(row[0])
+                    await redis.sadd(rk.ONLINE_DEVICES, device_uuid)
+        except Exception:
+            pass
+
         if publisher is not None:
             try:
                 from app.services.command_service import flush_queued_commands
@@ -268,6 +289,24 @@ async def handle_status(
                 )
     else:
         await redis.srem(rk.ONLINE_DEVICES, parsed.device_id)
+        # Also remove by device UUID
+        try:
+            from app.db.session import async_session_factory
+            from app.models.device import MqttCredential
+            from sqlalchemy import select
+
+            async with async_session_factory() as session:
+                result = await session.execute(
+                    select(MqttCredential.device_id).where(
+                        MqttCredential.token == parsed.device_id,
+                        MqttCredential.revoked == False,
+                    )
+                )
+                row = result.first()
+                if row:
+                    await redis.srem(rk.ONLINE_DEVICES, str(row[0]))
+        except Exception:
+            pass
 
     # Update device status in the database (token-based lookup)
     device_uuid = None

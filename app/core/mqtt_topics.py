@@ -49,6 +49,11 @@ def command_topic(org_id: str, device_id: str) -> str:
     return topic(org_id, device_id, MessageType.COMMAND)
 
 
+def token_command_topic(token: str) -> str:
+    """Token-based command topic: iotaps/{token}/command (for token-auth devices)."""
+    return f"{TOPIC_ROOT}/{token}/{MessageType.COMMAND.value}"
+
+
 def ack_topic(org_id: str, device_id: str) -> str:
     """Command-ACK topic for a device (device publishes here)."""
     return topic(org_id, device_id, MessageType.ACK)
