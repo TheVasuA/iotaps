@@ -81,15 +81,12 @@ def create_access_token(
     user_id: str,
     org_id: str,
     role: str,
+    email: str = "",
     settings: Settings | None = None,
     now: datetime | None = None,
     jti: str | None = None,
 ) -> str:
-    """Issue a signed, short-lived access JWT with the standard claim set.
-
-    The token carries ``{sub, org_id, role, iat, exp, jti}`` plus a ``typ``
-    marker. ``exp`` is ``iat + jwt_access_token_ttl_seconds`` (config-driven).
-    """
+    """Issue a signed, short-lived access JWT with the standard claim set."""
     settings = settings or get_settings()
     issued = now or _now()
     iat = _epoch(issued)
@@ -98,6 +95,7 @@ def create_access_token(
         "sub": str(user_id),
         "org_id": str(org_id),
         "role": role,
+        "email": email,
         "iat": iat,
         "exp": exp,
         "jti": jti or uuid.uuid4().hex,

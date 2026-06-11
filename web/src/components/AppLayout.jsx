@@ -1,6 +1,7 @@
 import { Outlet, NavLink, useNavigate } from "react-router-dom";
 import { SignOut, ShieldCheck } from "@phosphor-icons/react";
 import { cn } from "@/lib/utils";
+import Logo from "./Logo";
 import ThemeModeToggle from "./ThemeModeToggle";
 import NotificationCenter from "./notifications/NotificationCenter";
 import WhatsNewPopup from "./changelog/WhatsNewPopup";
@@ -49,7 +50,10 @@ export default function AppLayout() {
     <div className="min-h-screen bg-background text-foreground">
       <header className="flex items-center justify-between border-b border-border px-6 py-3">
         <div className="flex items-center gap-6">
-          <span className="text-lg font-semibold text-primary" title="IoT Automation Platform Services">IoTAPS</span>
+          <span className="flex items-center gap-2 text-lg font-semibold text-primary" title="IoT Automation Platform Services">
+            <Logo size={22} />
+            IoTAPS
+          </span>
           <nav className="flex gap-1">
             {items.map((item) => (
               <NavLink
@@ -68,11 +72,6 @@ export default function AppLayout() {
           </nav>
         </div>
         <div className="flex items-center gap-2">
-          {user?.email ? (
-            <span className="hidden text-sm text-muted-foreground sm:inline">
-              {user.email}
-            </span>
-          ) : null}
           <NavLink
             to="/security/2fa"
             className={({ isActive }) =>
@@ -88,7 +87,9 @@ export default function AppLayout() {
           </NavLink>
           <NotificationCenter />
           <ThemeModeToggle />
-          <span className="hidden text-sm text-muted-foreground sm:inline">{user?.email}</span>
+          <span className="hidden text-sm font-medium text-muted-foreground sm:inline">
+            {user?.email ? user.email.split("@")[0] : "User"}
+          </span>
           <Button variant="outline" size="sm" onClick={onLogout}>
             <SignOut size={16} />
             <span className="hidden sm:inline">Sign out</span>

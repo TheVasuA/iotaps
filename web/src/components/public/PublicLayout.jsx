@@ -1,5 +1,6 @@
 import { Outlet, NavLink, Link } from "react-router-dom";
 import { cn } from "@/lib/utils";
+import Logo from "@/components/Logo";
 import ThemeModeToggle from "@/components/ThemeModeToggle";
 import { buttonVariants } from "@/components/ui/button";
 
@@ -58,7 +59,8 @@ export default function PublicLayout() {
       <header className="border-b border-border">
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-6 py-3">
           <div className="flex items-center gap-6">
-            <Link to="/" className="text-lg font-semibold text-primary">
+            <Link to="/" className="flex items-center gap-2 text-lg font-semibold text-primary">
+              <Logo size={22} />
               IoTAPS
             </Link>
             <nav className="hidden gap-1 md:flex">
@@ -88,7 +90,10 @@ export default function PublicLayout() {
       <footer className="border-t border-border">
         <div className="mx-auto grid max-w-6xl gap-8 px-6 py-10 sm:grid-cols-2 md:grid-cols-4">
           <div className="space-y-2">
-            <span className="text-lg font-semibold text-primary">IoTAPS</span>
+            <span className="flex items-center gap-2 text-lg font-semibold text-primary">
+              <Logo size={20} />
+              IoTAPS
+            </span>
             <p className="text-xs text-muted-foreground">IoT Automation Platform Services</p>
             <p className="text-sm text-muted-foreground">
               Multi-tenant IoT platform for device fleets, dashboards, and

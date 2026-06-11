@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import GoogleSignInButton from "@/components/GoogleSignInButton";
 import ThemeModeToggle from "@/components/ThemeModeToggle";
+import Logo from "@/components/Logo";
 import { useAppDispatch } from "@/store/hooks";
 import { setCredentials } from "@/store/authSlice";
 import {
@@ -94,7 +95,7 @@ export default function RegisterPage() {
       {/* Left panel — branding */}
       <div className="hidden lg:flex lg:w-1/2 flex-col justify-between bg-primary/5 p-10">
         <div>
-          <Link to="/" className="text-2xl font-bold text-primary">IoTAPS</Link>
+          <Link to="/" className="flex items-center gap-2 text-2xl font-bold text-primary"><Logo size={28} />IoTAPS</Link>
           <p className="mt-1 text-xs text-muted-foreground">IoT Automation Platform Services</p>
         </div>
         <div className="space-y-4">
@@ -128,7 +129,7 @@ export default function RegisterPage() {
       <div className="flex w-full flex-col lg:w-1/2 overflow-y-auto">
         {/* Top bar */}
         <div className="flex items-center justify-between px-6 py-3 shrink-0">
-          <Link to="/" className="text-lg font-bold text-primary lg:hidden">IoTAPS</Link>
+          <Link to="/" className="flex items-center gap-2 text-lg font-bold text-primary lg:hidden"><Logo size={20} />IoTAPS</Link>
           <div className="flex items-center gap-3">
             <ThemeModeToggle />
             <Link to="/login" className="text-sm font-medium text-muted-foreground hover:text-primary">

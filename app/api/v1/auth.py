@@ -159,6 +159,7 @@ async def _issue_token_pair(user: User) -> TokenPair:
         user_id=str(user.id),
         org_id=str(user.org_id),
         role=user.role,
+        email=user.email,
         settings=settings,
     )
     refresh = await jwt_service.issue_refresh_token(
