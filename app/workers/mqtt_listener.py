@@ -193,6 +193,35 @@ def validate_status_payload(payload: bytes | str) -> Optional[str]:
 # ---------------------------------------------------------------------------
 # Message handling (pure side effects against Redis)
 # ---------------------------------------------------------------------------
+async def _resolve_device_uuid(redis: Any, token: str) -> str:
+    """Resolve a device token to its UUID, with Redis caching."""
+    cache_key = f"iotaps:token2uuid:{token}"
+    cached = await redis.get(cache_key)
+    if cached:
+        return cached if isinstance(cached, str) else cached.decode()
+    try:
+        from app.db.session import async_session_factory
+        from app.models.device import MqttCredential
+        from sqlalchemy import select
+
+        async with async_session_factory() as session:
+            result = await session.execute(
+                select(MqttCredential.device_id, MqttCredential.device_id).where(
+                    MqttCredential.token == token,
+                    MqttCredential.revoked == False,
+                )
+            )
+            row = result.first()
+            if row:
+                device_uuid = str(row[0])
+                # Cache for 1 hour
+                await redis.set(cache_key, device_uuid, ex=3600)
+                return device_uuid
+    except Exception:
+        pass
+    return token
+
+
 async def handle_telemetry(redis: Any, parsed: ParsedTopic, payload: bytes | str) -> bool:
     """Validate telemetry and LPUSH an envelope onto the ingest queue (Req 6.1).
 
@@ -209,9 +238,13 @@ async def handle_telemetry(redis: Any, parsed: ParsedTopic, payload: bytes | str
         )
         return False
 
+    # Resolve device UUID from token for 3-segment topics so the batch writer
+    # publishes telemetry to the correct Redis channel (keyed by UUID).
+    device_id = await _resolve_device_uuid(redis, parsed.device_id)
+
     envelope = {
         "org_id": parsed.org_id,
-        "device_id": parsed.device_id,
+        "device_id": device_id,
         "ts": validated["ts"],
         "data": validated["data"],
     }
