@@ -11,6 +11,7 @@ services:
     restart: always
     depends_on:
       - fastapi-api
+      - fastapi-ws
     ports:
       - "80:80"
       - "443:443"
@@ -46,6 +47,37 @@ services:
       --worker-class uvicorn.workers.UvicornWorker
       --bind 0.0.0.0:8000
       --timeout 60
+    networks:
+      - iotaps
+
+  # Dedicated WebSocket service — isolates long-lived WS connections from
+  # short-lived REST requests so 4000+ concurrent WS clients don't starve the
+  # API. Uses the same image but with higher timeouts and fewer workers (each
+  # async Uvicorn worker handles thousands of connections).
+  fastapi-ws:
+    build:
+      context: ./app
+      dockerfile: Dockerfile
+    image: iotaps/api:latest
+    container_name: iotaps-ws
+    restart: always
+    env_file:
+      - .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    expose:
+      - "8001"
+    command: >
+      gunicorn app.main:app
+      --workers ${WS_WORKERS:-2}
+      --worker-class uvicorn.workers.UvicornWorker
+      --bind 0.0.0.0:8001
+      --timeout 0
+      --keep-alive 3600
+      --graceful-timeout 30
     networks:
       - iotaps
 
