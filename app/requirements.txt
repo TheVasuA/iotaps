@@ -21,6 +21,7 @@ aiomqtt==2.3.0
 pyjwt==2.10.1
 pyotp==2.9.0
 google-auth==2.37.0
+requests==2.32.3
 email-validator==2.2.0
 
 # --- Device provisioning (Req 5.2: QR code generation) ---
