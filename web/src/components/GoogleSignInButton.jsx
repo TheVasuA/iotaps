@@ -35,6 +35,8 @@ export default function GoogleSignInButton({ onCredential, disabled, label = "Co
   const [ready, setReady] = useState(false);
   const initialized = useRef(false);
   const btnRef = useRef(null);
+  const callbackRef = useRef(onCredential);
+  callbackRef.current = onCredential;
 
   useEffect(() => {
     if (!CLIENT_ID) return;
@@ -47,7 +49,7 @@ export default function GoogleSignInButton({ onCredential, disabled, label = "Co
             client_id: CLIENT_ID,
             callback: (response) => {
               if (response?.credential) {
-                onCredential(response.credential);
+                callbackRef.current(response.credential);
               } else {
                 toast.error("Google sign-in did not return a credential");
               }
@@ -71,7 +73,7 @@ export default function GoogleSignInButton({ onCredential, disabled, label = "Co
         toast.error("Could not load Google sign-in");
       });
     return () => { cancelled = true; };
-  }, [onCredential]);
+  }, []);
 
   const onClick = useCallback(() => {
     if (!CLIENT_ID) {
