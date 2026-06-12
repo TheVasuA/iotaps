@@ -25,7 +25,7 @@ const char* WIFI_SSID     = "admin";      // <-- Change this
 const char* WIFI_PASSWORD = "1234567890";   // <-- Change this
 
 // IoTAPS connection
-const char* IOTAPS_SERVER = "37.60.253.38";          // VPS IP directly (mqtt.iotaps.com)
+const char* IOTAPS_SERVER = "mqtt.iotaps.com";       // MQTT subdomain (DNS-only, bypasses Cloudflare)
 const int   IOTAPS_PORT   = 1883;                   // MQTT port
 const char* DEVICE_TOKEN  = "dT_EwiHTdUM";         // Your device token
 
