@@ -34,7 +34,7 @@ export default function SliderWidget({ widget, onCommand, readOnly }) {
     if (readOnly) return;
     onCommand?.({
       deviceId,
-      command: config.command || metric || "value",
+      command: config.command || metric,
       type: "value",
       value,
     });

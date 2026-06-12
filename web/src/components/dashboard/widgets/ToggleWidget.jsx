@@ -37,7 +37,7 @@ export default function ToggleWidget({ widget, onCommand, readOnly }) {
     setOptimistic(next);
     onCommand?.({
       deviceId,
-      command: config.command || metric || "toggle",
+      command: config.command || metric,
       type: next ? "on" : "off",
       value: next ? 1 : 0,
     });
