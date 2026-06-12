@@ -18,12 +18,14 @@ import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import {
   fetchDevices,
   setFilters,
+  updateDeviceStatus,
   selectDevices,
   selectDeviceGroups,
   selectDeviceFilters,
   selectDevicesStatus,
   selectDevicesError,
 } from "@/store/devicesSlice";
+import realtimeClient from "@/lib/realtime";
 import ProvisioningWizard from "@/components/devices/ProvisioningWizard";
 import GroupManager from "@/components/devices/GroupManager";
 
@@ -103,14 +105,21 @@ export default function DeviceListPage() {
     dispatch(
       fetchDevices({ groupId: filters.groupId, status: filters.status })
     );
-    // Poll every 30s so device online/offline status stays fresh.
-    const interval = setInterval(() => {
-      dispatch(
-        fetchDevices({ groupId: filters.groupId, status: filters.status })
-      );
-    }, 30000);
-    return () => clearInterval(interval);
   }, [dispatch, filters.groupId, filters.status]);
+
+  // Subscribe to real-time device status updates via WebSocket instead of
+  // polling. Each device's channel pushes online/offline changes instantly.
+  useEffect(() => {
+    if (!devices.length) return;
+    const unsubs = devices.map((d) =>
+      realtimeClient.subscribe(`device:${d.id}`, (msg) => {
+        if (msg.type === "status" && msg.device_id === d.id) {
+          dispatch(updateDeviceStatus({ device_id: msg.device_id, status: msg.status }));
+        }
+      })
+    );
+    return () => unsubs.forEach((fn) => fn());
+  }, [dispatch, devices.length]); // re-subscribe when device list changes
 
   const groupName = (id) => groups.find((g) => g.id === id)?.name;
 

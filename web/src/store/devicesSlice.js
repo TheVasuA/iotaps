@@ -104,6 +104,12 @@ const devicesSlice = createSlice({
       if (idx >= 0) state.items[idx] = device;
       else state.items.unshift(device);
     },
+    // Real-time status update from WebSocket (avoids polling).
+    updateDeviceStatus(state, action) {
+      const { device_id, status } = action.payload;
+      const idx = state.items.findIndex((d) => d.id === device_id);
+      if (idx >= 0) state.items[idx] = { ...state.items[idx], status };
+    },
   },
   extraReducers: (builder) => {
     builder
@@ -135,7 +141,7 @@ const devicesSlice = createSlice({
   },
 });
 
-export const { setFilters, upsertDevice } = devicesSlice.actions;
+export const { setFilters, upsertDevice, updateDeviceStatus } = devicesSlice.actions;
 export default devicesSlice.reducer;
 
 // Selectors
