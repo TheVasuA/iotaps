@@ -65,6 +65,7 @@ router = APIRouter()
 # Client-facing channel name prefixes (distinct from Redis key names).
 CLIENT_DEVICE_PREFIX = "device:"
 CLIENT_DASHBOARD_PREFIX = "dashboard:"
+CLIENT_ADMIN_PREFIX = "admin:"
 
 # WebSocket close codes (RFC 6455 private-use range 4000-4999 for app errors).
 WS_CLOSE_UNAUTHORIZED = 4401
@@ -100,6 +101,12 @@ def resolve_redis_channels(client_channel: str) -> list[str]:
         if not dashboard_id:
             return []
         return [rk.dashboard_channel(dashboard_id)]
+    if client_channel.startswith(CLIENT_ADMIN_PREFIX):
+        # Admin channels: "admin:stats" → system stats pub/sub
+        sub_channel = client_channel[len(CLIENT_ADMIN_PREFIX):].strip()
+        if sub_channel == "stats":
+            return [rk.admin_stats_channel()]
+        return []
     return []
 
 

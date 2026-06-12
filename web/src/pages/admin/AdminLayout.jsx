@@ -8,6 +8,7 @@ import {
   FileText,
   Heartbeat,
   ShieldCheck,
+  Gauge,
 } from "@phosphor-icons/react";
 import { cn } from "@/lib/utils";
 
@@ -17,6 +18,7 @@ import { cn } from "@/lib/utils";
 // content renders in the <Outlet />.
 const panels = [
   { to: "/admin", end: true, label: "Overview", icon: ChartPie },
+  { to: "/admin/system", label: "System Stats", icon: Gauge },
   { to: "/admin/companies", label: "Companies & Users", icon: Buildings },
   { to: "/admin/mqtt-nodes", label: "MQTT Nodes", icon: HardDrives },
   { to: "/admin/revenue", label: "Revenue", icon: CurrencyInr },

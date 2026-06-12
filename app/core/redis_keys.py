@@ -69,6 +69,11 @@ def dashboard_channel(dashboard_id: str) -> str:
     return _key(_PUBSUB_DASHBOARD, dashboard_id)
 
 
+def admin_stats_channel() -> str:
+    """Pub/sub channel for live system stats (RAM, disk, connections)."""
+    return _key("admin", "stats")
+
+
 # ---------------------------------------------------------------------------
 # Refresh-token store: refresh:{jti} (Req 1.5, 1.6)
 # ---------------------------------------------------------------------------

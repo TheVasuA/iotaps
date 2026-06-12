@@ -23,6 +23,12 @@ export async function getOverview() {
   return data; // { companies, devices, users, online, revenue, server_health }
 }
 
+/** Live system stats: RAM, disk, CPU, MQTT connections. */
+export async function getSystemStats() {
+  const { data } = await apiClient.get("/admin/system-stats");
+  return data;
+}
+
 // ---------------------------------------------------------------------------
 // Company / user / device management (Req 23.2-23.6)
 // ---------------------------------------------------------------------------

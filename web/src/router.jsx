@@ -124,6 +124,7 @@ export const router = createBrowserRouter([
         ),
         children: [
           { index: true, element: L(() => import("@/pages/admin/OverviewPanel")) },
+          { path: "system", element: L(() => import("@/pages/admin/SystemStatsPanel")) },
           { path: "companies", element: L(() => import("@/pages/admin/CompaniesPanel")) },
           { path: "mqtt-nodes", element: L(() => import("@/pages/admin/MqttNodesPanel")) },
           { path: "revenue", element: L(() => import("@/pages/admin/RevenuePanel")) },

@@ -130,6 +130,37 @@ async def admin_health(
 
 
 # ---------------------------------------------------------------------------
+# Live system stats (RAM, disk, CPU, connections)
+# ---------------------------------------------------------------------------
+@router.get("/system-stats")
+async def admin_system_stats(
+    _: Principal = Depends(require_role(ROLE_SUPER_ADMIN)),
+) -> dict:
+    """Return live system stats (RAM, disk, MQTT connections)."""
+    from app.workers.stats_publisher import (
+        _get_memory_stats, _get_disk_stats, _calc_cpu_percent,
+        _get_mqtt_connections, _get_redis_info, _get_ingest_queue_size,
+    )
+    from app.core.redis_client import get_redis
+    redis = get_redis()
+    memory = _get_memory_stats()
+    disk = _get_disk_stats()
+    cpu = _calc_cpu_percent()
+    connections = await _get_mqtt_connections(redis) if redis else 0
+    redis_info = await _get_redis_info(redis) if redis else {}
+    queue = await _get_ingest_queue_size(redis) if redis else 0
+    return {
+        "ram": memory,
+        "disk": disk,
+        "cpu_percent": cpu,
+        "mqtt_connections": connections,
+        "redis_memory": redis_info,
+        "ingest_queue_size": queue,
+        "max_connections_design": 10000,
+    }
+
+
+# ---------------------------------------------------------------------------
 # Errors (Req 28.3)
 # ---------------------------------------------------------------------------
 @router.get("/errors", response_model=ErrorsResponse)
