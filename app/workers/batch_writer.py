@@ -309,6 +309,8 @@ async def run(
         # Successful poll: reset backoff and idle briefly if the queue was empty.
         backoff = BACKOFF_INITIAL_SECONDS
         if processed == 0:
+            # While idle, process any pending datastream discoveries
+            await _process_datastream_discoveries(redis)
             await _sleep_or_stop(stop_event, EMPTY_SLEEP_SECONDS)
 
 
@@ -318,6 +320,69 @@ async def _sleep_or_stop(stop_event: asyncio.Event, seconds: float) -> None:
         await asyncio.wait_for(stop_event.wait(), timeout=seconds)
     except asyncio.TimeoutError:
         pass
+
+
+async def _process_datastream_discoveries(redis: Any) -> None:
+    """Register newly discovered telemetry keys as DeviceSensor entries.
+
+    Drains up to 50 items from the discovery queue per cycle. Idempotent:
+    skips keys that already exist in the DB.
+    """
+    import json as _json
+    import uuid as _uuid
+
+    from sqlalchemy import select
+
+    from app.db.session import async_session_factory
+    from app.models.device import DeviceSensor
+
+    for _ in range(50):
+        raw = await redis.rpop("iotaps:datastream_discovery")
+        if raw is None:
+            break
+        try:
+            item = _json.loads(raw)
+            device_id = _uuid.UUID(item["device_id"])
+            key = item["key"]
+        except Exception:
+            continue
+
+        try:
+            async with async_session_factory() as session:
+                # Check if already exists
+                existing = await session.execute(
+                    select(DeviceSensor).where(
+                        DeviceSensor.device_id == device_id,
+                        DeviceSensor.key == key,
+                    )
+                )
+                if existing.scalar_one_or_none() is not None:
+                    continue
+
+                # Infer pin_type from key name
+                pin_type = "sensor"
+                if key.startswith("led") or key in ("relay", "switch", "motor", "fan", "pump"):
+                    pin_type = "toggle"
+                elif key in ("brightness", "speed", "volume", "angle", "pwm"):
+                    pin_type = "slider"
+
+                sensor = DeviceSensor(
+                    device_id=device_id,
+                    org_id=None,  # will be set below
+                    key=key,
+                    pin_type=pin_type,
+                    display_name=key.replace("_", " ").title(),
+                )
+                # Get device org_id
+                from app.models.device import Device
+                device = await session.get(Device, device_id)
+                if device:
+                    sensor.org_id = device.org_id
+                    session.add(sensor)
+                    await session.commit()
+                    logger.info("datastream_discovered", extra={"device_id": str(device_id), "key": key, "pin_type": pin_type})
+        except Exception:
+            logger.debug("datastream_discovery_skip", extra={"key": key})
 
 
 def main() -> None:

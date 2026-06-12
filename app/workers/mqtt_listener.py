@@ -272,6 +272,33 @@ async def handle_telemetry(redis: Any, parsed: ParsedTopic, payload: bytes | str
     # Cap queue at MAX_QUEUE_SIZE — trim oldest entries beyond limit
     await redis.ltrim(rk.INGEST_QUEUE, 0, rk.MAX_QUEUE_SIZE - 1)
 
+    # 4. Auto-discover datastreams: register new telemetry keys as DeviceSensors.
+    # Uses a Redis set per device to track known keys (cheap, no DB per message).
+    # Only writes to DB when a genuinely new key appears.
+    known_keys_key = f"iotaps:known_keys:{device_id}"
+    data_keys = set(validated["data"].keys())
+    try:
+        already_known = await redis.smembers(known_keys_key)
+        # Decode bytes if needed
+        already_known = {k.decode() if isinstance(k, bytes) else k for k in already_known}
+        new_keys = data_keys - already_known
+        if new_keys:
+            # Register new keys in Redis immediately
+            await redis.sadd(known_keys_key, *new_keys)
+            await redis.expire(known_keys_key, 86400)  # refresh TTL
+            # Queue DB registration (non-blocking, best-effort)
+            for key in new_keys:
+                await redis.lpush(
+                    "iotaps:datastream_discovery",
+                    json.dumps({"device_id": device_id, "key": key}),
+                )
+        elif not already_known:
+            # First time: populate from current keys
+            await redis.sadd(known_keys_key, *data_keys)
+            await redis.expire(known_keys_key, 86400)
+    except Exception:
+        pass  # best-effort, never block telemetry
+
     # Count against quota (best-effort, never blocks)
     try:
         plan = await resolve_org_plan(redis, parsed.org_id)

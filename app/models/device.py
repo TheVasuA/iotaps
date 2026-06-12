@@ -101,7 +101,13 @@ class MqttCredential(Base, TenantMixin):
 
 
 class DeviceSensor(Base, TenantMixin):
-    """A sensor channel exposed by a device."""
+    """A datastream (sensor/actuator channel) exposed by a device.
+
+    Acts as a registry of known telemetry keys, their type, and valid range.
+    Auto-populated from incoming telemetry (first-seen keys are registered) and
+    can be manually configured by the user (add display names, set types/ranges).
+    The widget settings dialog uses this to offer a dropdown instead of free-text.
+    """
 
     __tablename__ = "device_sensors"
 
@@ -112,10 +118,17 @@ class DeviceSensor(Base, TenantMixin):
         nullable=False,
         index=True,
     )
-    # sensor key (e.g. temp)
+    # sensor key matching the telemetry JSON key (e.g. "led1", "temperature")
     key: Mapped[str] = mapped_column(Text, nullable=False)
-    unit: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Human-friendly label (e.g. "Living Room LED")
     display_name: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Datastream type: sensor (read-only), toggle (on/off), slider (value range)
+    pin_type: Mapped[str] = mapped_column(Text, nullable=False, server_default="sensor")
+    # Unit (°C, %, V, etc.) - for display only
+    unit: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Valid range for slider/gauge widgets
+    min_value: Mapped[float | None] = mapped_column(nullable=True)
+    max_value: Mapped[float | None] = mapped_column(nullable=True)
 
 
 class DeviceUserAssignment(Base, TenantMixin):

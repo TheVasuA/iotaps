@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { widgetMeta } from "@/lib/widgets";
+import apiClient from "@/lib/apiClient";
 
 // Per-type settings form for a widget. Edits the widget `config` (device + metric
 // binding, thresholds, ranges, command name) and saves it back via `onSave`.
@@ -54,10 +55,23 @@ export default function WidgetSettingsDialog({
   onSave,
 }) {
   const [config, setConfig] = useState({});
+  const [datastreams, setDatastreams] = useState([]);
 
   useEffect(() => {
     if (widget) setConfig({ ...(widget.config || {}) });
   }, [widget]);
+
+  // Fetch datastreams when device changes
+  useEffect(() => {
+    if (!config.deviceId) {
+      setDatastreams([]);
+      return;
+    }
+    apiClient
+      .get(`/devices/${config.deviceId}/datastreams`)
+      .then((res) => setDatastreams(res.data || []))
+      .catch(() => setDatastreams([]));
+  }, [config.deviceId]);
 
   if (!widget) return null;
 
@@ -104,6 +118,60 @@ export default function WidgetSettingsDialog({
                     </option>
                   ))}
                 </select>
+              </div>
+            );
+          }
+          if (key === "metric" || key === "latMetric" || key === "lonMetric") {
+            // Show dropdown of discovered datastreams, with fallback to free-text
+            const label = LABELS[key] || key;
+            if (datastreams.length > 0) {
+              // Filter by widget-appropriate pin_type
+              let filtered = datastreams;
+              if (widget.type === "toggle") {
+                filtered = datastreams.filter((ds) => ds.pin_type === "toggle");
+              } else if (widget.type === "slider") {
+                filtered = datastreams.filter((ds) => ds.pin_type === "slider" || ds.pin_type === "sensor");
+              }
+              // If no matching type, show all
+              if (filtered.length === 0) filtered = datastreams;
+
+              return (
+                <div key={key} className="space-y-1">
+                  <Label htmlFor={`f-${key}`}>{label}</Label>
+                  <select
+                    id={`f-${key}`}
+                    value={config[key] || ""}
+                    onChange={(e) => setField(key, e.target.value || "")}
+                    className="h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                  >
+                    <option value="">Select metric…</option>
+                    {filtered.map((ds) => (
+                      <option key={ds.key} value={ds.key}>
+                        {ds.display_name || ds.key}
+                        {ds.unit ? ` (${ds.unit})` : ""}
+                        {ds.pin_type !== "sensor" ? ` [${ds.pin_type}]` : ""}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="text-[10px] text-muted-foreground">
+                    Auto-discovered from device telemetry
+                  </p>
+                </div>
+              );
+            }
+            // Fallback: free-text if no datastreams registered yet
+            return (
+              <div key={key} className="space-y-1">
+                <Label htmlFor={`f-${key}`}>{label}</Label>
+                <Input
+                  id={`f-${key}`}
+                  value={config[key] ?? ""}
+                  onChange={(e) => setField(key, e.target.value)}
+                  placeholder="e.g. led1, temperature"
+                />
+                <p className="text-[10px] text-muted-foreground">
+                  Send telemetry from device to auto-discover metrics
+                </p>
               </div>
             );
           }

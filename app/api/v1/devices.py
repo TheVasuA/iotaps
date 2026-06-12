@@ -349,3 +349,102 @@ async def device_qr(
     service = DeviceService(scope)
     png = await service.generate_qr_png(device_id)
     return RawResponse(content=png, media_type="image/png")
+
+
+# ---------------------------------------------------------------------------
+# Datastreams (auto-discovered sensor/actuator channels per device)
+# ---------------------------------------------------------------------------
+class DatastreamOut(BaseModel):
+    id: str
+    key: str
+    display_name: str | None
+    pin_type: str  # sensor | toggle | slider
+    unit: str | None
+    min_value: float | None
+    max_value: float | None
+
+
+class UpdateDatastreamRequest(BaseModel):
+    display_name: str | None = None
+    pin_type: str | None = Field(default=None, description="sensor | toggle | slider")
+    unit: str | None = None
+    min_value: float | None = None
+    max_value: float | None = None
+
+    model_config = {"extra": "forbid"}
+
+
+@router.get("/{device_id}/datastreams", response_model=list[DatastreamOut])
+async def list_datastreams(
+    device_id: uuid.UUID,
+    scope: TenantScope = Depends(tenant_scope),
+    _: Principal = Depends(require_role()),
+) -> list[DatastreamOut]:
+    """List all known datastreams (telemetry keys) for a device.
+
+    Auto-populated from incoming telemetry. Used by widget settings to offer
+    a dropdown of available metrics instead of free-text input.
+    """
+    from sqlalchemy import select
+    from app.models.device import DeviceSensor
+
+    # Ensure device belongs to caller's org
+    await scope.get(Device, device_id)
+    result = await scope.session.execute(
+        select(DeviceSensor).where(DeviceSensor.device_id == device_id)
+    )
+    sensors = result.scalars().all()
+    return [
+        DatastreamOut(
+            id=str(s.id),
+            key=s.key,
+            display_name=s.display_name,
+            pin_type=s.pin_type,
+            unit=s.unit,
+            min_value=s.min_value,
+            max_value=s.max_value,
+        )
+        for s in sensors
+    ]
+
+
+@router.patch("/{device_id}/datastreams/{datastream_id}", response_model=DatastreamOut)
+async def update_datastream(
+    device_id: uuid.UUID,
+    datastream_id: uuid.UUID,
+    payload: UpdateDatastreamRequest,
+    scope: TenantScope = Depends(tenant_scope),
+    _: Principal = Depends(require_role(*_MANAGE_ROLES)),
+) -> DatastreamOut:
+    """Update a datastream's display name, type, unit, or range."""
+    from app.models.device import DeviceSensor
+
+    await scope.get(Device, device_id)
+    sensor = await scope.session.get(DeviceSensor, datastream_id)
+    if sensor is None or sensor.device_id != device_id:
+        from app.core.errors import NotFoundError
+        raise NotFoundError("Datastream not found")
+
+    fields_set = payload.model_fields_set
+    if "display_name" in fields_set:
+        sensor.display_name = payload.display_name
+    if "pin_type" in fields_set and payload.pin_type in ("sensor", "toggle", "slider"):
+        sensor.pin_type = payload.pin_type
+    if "unit" in fields_set:
+        sensor.unit = payload.unit
+    if "min_value" in fields_set:
+        sensor.min_value = payload.min_value
+    if "max_value" in fields_set:
+        sensor.max_value = payload.max_value
+
+    await scope.session.commit()
+    await scope.session.refresh(sensor)
+    return DatastreamOut(
+        id=str(sensor.id),
+        key=sensor.key,
+        display_name=sensor.display_name,
+        pin_type=sensor.pin_type,
+        unit=sensor.unit,
+        min_value=sensor.min_value,
+        max_value=sensor.max_value,
+    )
