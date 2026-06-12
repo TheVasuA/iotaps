@@ -1,13 +1,3 @@
-# Cloudflare Pages redirects/proxying.
-# Proxies /api/* and /ws to the VPS origin so the SPA works without CORS issues.
-# Replace YOUR_VPS_IP_OR_DOMAIN with your actual Contabo VPS address.
-#
-# Syntax: <from> <to> <status>
-#   200 = proxy (invisible rewrite, Cloudflare fetches from origin)
-#   The SPA fallback (/*) serves index.html for client-side routing.
-
-/api/*  https://api.iotaps.com/api/:splat  200
-/ws     https://api.iotaps.com/ws          200
-
-# SPA fallback — all other routes serve index.html for React Router
-/*      /index.html   200
+# SPA fallback — all routes serve index.html for React Router client-side routing.
+# API calls go directly to api.iotaps.com (set via VITE_API_BASE_URL).
+/*    /index.html   200

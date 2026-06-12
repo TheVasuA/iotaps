@@ -7,6 +7,7 @@
 #   DNS       → Cloudflare (iotaps.com → Pages, api.iotaps.com → VPS)
 # ============================================================
 
+https://dash.cloudflare.com/?to=/:account/pages/new/provider/github
 
 # ████████████████████████████████████████████████████████████
 # PART 1: CLOUDFLARE PAGES (Frontend) — Do this FIRST
@@ -130,10 +131,10 @@ docker exec -w /srv/app iotaps-api alembic upgrade head
 # ████████████████████████████████████████████████████████████
 
 # WARNING: This destroys ALL data (database, redis, mqtt logs)
-cd /projects/iotaps
+cd ~/projects/iotaps
 docker compose down -v --rmi all
 docker system prune -af --volumes
-cd /projects
+cd ~/projects
 rm -rf iotaps
 git clone https://github.com/TheVasuA/iotaps.git
 cd iotaps
