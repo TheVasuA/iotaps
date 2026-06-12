@@ -58,6 +58,11 @@ class Settings(BaseSettings):
     # Client id used to verify Google ID tokens (Req 1.2). Empty disables OAuth.
     google_oauth_client_id: str = ""
 
+    # ---- Super Admin seed (auto-created on first startup) ----
+    # When set, the app seeds this account as super_admin if it doesn't exist.
+    superadmin_email: str = ""
+    superadmin_password: str = ""
+
     # ---- Razorpay (Payment_Gateway, Req 17) ----
     # API keys for order creation; left empty in dev/test so no live API is hit.
     razorpay_key_id: str = ""

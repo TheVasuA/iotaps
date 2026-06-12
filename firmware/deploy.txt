@@ -100,7 +100,7 @@ curl http://localhost:8000/api/v1/health
 # --- 4.1 Register MQTT node ---
 TOKEN=$(curl -s -X POST http://localhost:8000/api/v1/auth/login \
   -H "Content-Type: application/json" \
-  -d '{"email":"admin@iotaps.dev","password":"Admin123!"}' | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
+  -d '{"email":"thevasu.a@gmail.com","password":"p@rv2thiV"}' | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
 
 curl -X POST http://localhost:8000/api/v1/admin/mqtt-nodes \
   -H "Content-Type: application/json" \
@@ -143,3 +143,18 @@ docker compose build --no-cache
 docker compose up -d
 sleep 15
 docker exec -w /srv/app iotaps-api alembic upgrade head
+
+
+////////////////////////////
+
+cd ~/projects/iotaps
+git pull origin main
+docker compose down
+docker compose build --no-cache
+docker compose up -d
+
+more websocket
+Option B: Add SSL to your VPS with certbot (keep grey cloud):
+# On VPS:
+sudo apt install -y certbot python3-certbot-nginx
+sudo certbot --nginx -d api.iotaps.com -d iotaps.com -d www.iotaps.com

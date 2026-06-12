@@ -19,6 +19,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import select
 
 from app.api.ws import router as ws_router
 from app.api.v1.router import api_v1_router
@@ -33,6 +34,59 @@ from app.core.settings_loader import get_all_settings
 API_V1_PREFIX = "/api/v1"
 
 
+async def _seed_superadmin(logger):
+    """Create the super_admin user from env vars if not already present.
+
+    This runs on every startup but is idempotent: if the email already exists,
+    it ensures the role is super_admin (in case it was manually changed).
+    """
+    settings = get_settings()
+    if not settings.superadmin_email or not settings.superadmin_password:
+        return
+
+    from app.db.session import async_session_factory
+    from app.models.user import User
+    from app.models.organization import Organization
+    from app.core.security.password import hash_password
+
+    try:
+        async with async_session_factory() as session:
+            result = await session.execute(
+                select(User).where(User.email == settings.superadmin_email)
+            )
+            user = result.scalar_one_or_none()
+
+            if user is None:
+                # Need an org for the user
+                org_result = await session.execute(select(Organization).limit(1))
+                org = org_result.scalar_one_or_none()
+                if org is None:
+                    org = Organization(name="Platform Admin")
+                    session.add(org)
+                    await session.flush()
+
+                user = User(
+                    org_id=org.id,
+                    email=settings.superadmin_email,
+                    gmail_identity=settings.superadmin_email,
+                    password_hash=hash_password(settings.superadmin_password),
+                    password_format="argon2",
+                    role="super_admin",
+                    twofa_enabled=False,
+                )
+                session.add(user)
+                await session.commit()
+                logger.info("superadmin_seeded", extra={"email": settings.superadmin_email})
+            elif user.role != "super_admin":
+                user.role = "super_admin"
+                await session.commit()
+                logger.info("superadmin_role_fixed", extra={"email": settings.superadmin_email})
+            else:
+                logger.info("superadmin_exists", extra={"email": settings.superadmin_email})
+    except Exception as exc:
+        logger.warning("superadmin_seed_failed", extra={"error": str(exc)})
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application startup/shutdown lifecycle."""
@@ -44,6 +98,10 @@ async def lifespan(app: FastAPI):
         await get_all_settings()
     except Exception:
         logger.warning("platform_settings_warm_failed")
+
+    # Auto-seed super admin from env vars (SUPERADMIN_EMAIL, SUPERADMIN_PASSWORD)
+    # so fresh deployments don't require manual DB manipulation.
+    await _seed_superadmin(logger)
 
     logger.info("application_startup", extra={"env": get_settings().app_env})
     yield
