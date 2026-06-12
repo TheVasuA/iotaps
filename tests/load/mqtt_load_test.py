@@ -7,28 +7,22 @@ Usage:
 
 Each simulated device:
     - Connects to the MQTT broker with a unique client ID
-    - Publishes telemetry every `interval` seconds to iotaps/{token}/telemetry
+    - Publishes telemetry every `interval` seconds
     - Publishes online status on connect
     - Has LWT for offline status
-
-Monitors:
-    - Connection success/failure rate
-    - Messages published per second
-    - Connection time
+    - Disconnects cleanly on exit (Ctrl+C)
 """
 
 import argparse
-import asyncio
 import json
 import random
+import signal
+import sys
 import time
-import string
+import threading
 from dataclasses import dataclass, field
 
-# Uses paho-mqtt synchronous client in threads for maximum compatibility
 import paho.mqtt.client as mqtt
-from concurrent.futures import ThreadPoolExecutor
-import threading
 
 
 @dataclass
@@ -55,8 +49,7 @@ class Stats:
     def summary(self):
         avg_connect = (
             sum(self.connect_times) / len(self.connect_times)
-            if self.connect_times
-            else 0
+            if self.connect_times else 0
         )
         return {
             "connected": self.connected,
@@ -67,10 +60,9 @@ class Stats:
         }
 
 
-def generate_token():
-    """Generate a fake device token like dT_xxxxxxxxx"""
-    chars = string.ascii_letters + string.digits
-    return "dT_" + "".join(random.choices(chars, k=8))
+# Global list to track all clients for clean shutdown
+_all_clients: list = []
+_all_clients_lock = threading.Lock()
 
 
 def simulate_device(device_id: int, host: str, port: int, interval: int, stats: Stats, stop_event: threading.Event):
@@ -81,9 +73,10 @@ def simulate_device(device_id: int, host: str, port: int, interval: int, stats: 
 
     client = mqtt.Client(client_id=token, protocol=mqtt.MQTTv311)
     client.username_pw_set(token, token)
-
-    # LWT
     client.will_set(topic_status, json.dumps({"status": "offline"}), qos=1, retain=True)
+
+    with _all_clients_lock:
+        _all_clients.append(client)
 
     start = time.time()
     try:
@@ -91,7 +84,7 @@ def simulate_device(device_id: int, host: str, port: int, interval: int, stats: 
         client.loop_start()
         duration = time.time() - start
         stats.record_connect(duration)
-    except Exception as e:
+    except Exception:
         stats.record_failure()
         return
 
@@ -110,16 +103,40 @@ def simulate_device(device_id: int, host: str, port: int, interval: int, stats: 
         stats.record_message()
         stop_event.wait(interval + random.uniform(-0.5, 0.5))
 
-    # Cleanup
+    # Clean disconnect
     client.publish(topic_status, json.dumps({"status": "offline"}), retain=True)
     client.loop_stop()
     client.disconnect()
+
+
+def cleanup_all_clients():
+    """Force disconnect all MQTT clients."""
+    print(f"\n[!] Disconnecting {len(_all_clients)} clients...")
+    for client in _all_clients:
+        try:
+            client.loop_stop()
+            client.disconnect()
+        except Exception:
+            pass
+    print("[✓] All clients disconnected.")
 
 
 def run_load_test(host: str, port: int, num_devices: int, interval: int, duration: int):
     """Run the load test with N simulated devices."""
     stats = Stats()
     stop_event = threading.Event()
+
+    # Handle Ctrl+C gracefully
+    def signal_handler(sig, frame):
+        print("\n\n[!] Ctrl+C received — shutting down...")
+        stop_event.set()
+        time.sleep(2)
+        cleanup_all_clients()
+        summary = stats.summary()
+        print(f"\n  Final: {summary['connected']} connected, {summary['messages_sent']} messages sent")
+        sys.exit(0)
+
+    signal.signal(signal.SIGINT, signal_handler)
 
     print(f"\n{'='*60}")
     print(f"  IoTAPS MQTT Load Test")
@@ -128,43 +145,46 @@ def run_load_test(host: str, port: int, num_devices: int, interval: int, duratio
     print(f"  Devices:    {num_devices}")
     print(f"  Interval:   {interval}s")
     print(f"  Duration:   {duration}s")
+    print(f"  (Press Ctrl+C to stop early and disconnect all)")
     print(f"{'='*60}\n")
 
-    # Stagger connections (don't connect all 7000 at once)
-    print(f"[+] Connecting {num_devices} devices (staggered over 60s)...")
-    threads = []
+    # Start device threads (daemon=True so they die with main)
+    print(f"[+] Connecting {num_devices} devices...")
+    for i in range(num_devices):
+        t = threading.Thread(
+            target=simulate_device,
+            args=(i, host, port, interval, stats, stop_event),
+            daemon=True,
+        )
+        t.start()
+        # Stagger: ~200 connections per second
+        if (i + 1) % 200 == 0:
+            time.sleep(1)
+            print(f"    Started: {i+1} | Connected: {stats.connected} | Failed: {stats.failed}")
 
-    with ThreadPoolExecutor(max_workers=min(num_devices, 500)) as executor:
-        for i in range(num_devices):
-            t = executor.submit(
-                simulate_device, i, host, port, interval, stats, stop_event
-            )
-            threads.append(t)
-            # Stagger: connect ~120 devices per second
-            if (i + 1) % 120 == 0:
-                time.sleep(1)
-                print(f"    Connected: {stats.connected} | Failed: {stats.failed}")
-
-    # Wait for all connections
+    # Wait for connections to settle
     time.sleep(5)
     print(f"\n[✓] Connection phase complete:")
     print(f"    Connected: {stats.connected}")
     print(f"    Failed:    {stats.failed}")
-    print(f"    Avg connect time: {stats.summary()['avg_connect_ms']}ms")
 
     # Let telemetry flow
     print(f"\n[+] Publishing telemetry for {duration}s...")
     start = time.time()
-    while time.time() - start < duration:
-        elapsed = int(time.time() - start)
-        rate = stats.messages_sent / max(elapsed, 1)
-        print(f"\r    Elapsed: {elapsed}s | Messages: {stats.messages_sent} | Rate: {rate:.0f} msg/s", end="")
-        time.sleep(2)
+    try:
+        while time.time() - start < duration:
+            elapsed = int(time.time() - start)
+            rate = stats.messages_sent / max(elapsed, 1)
+            print(f"\r    Elapsed: {elapsed}s | Messages: {stats.messages_sent} | Rate: {rate:.0f} msg/s", end="", flush=True)
+            time.sleep(2)
+    except KeyboardInterrupt:
+        pass
 
-    # Stop
-    print(f"\n\n[+] Stopping devices...")
+    # Stop and disconnect
+    print(f"\n\n[+] Stopping...")
     stop_event.set()
-    time.sleep(5)
+    time.sleep(3)
+    cleanup_all_clients()
 
     # Summary
     summary = stats.summary()
