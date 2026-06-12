@@ -1,4 +1,53 @@
-# 1. Update system & install Docker
+# ============================================================
+# IoTAPS FULL DEPLOYMENT (Fresh VPS + Cloudflare Pages Frontend)
+# ============================================================
+# Architecture:
+#   Frontend  → Cloudflare Pages (auto-deploy on git push)
+#   Backend   → Contabo VPS (Docker: API, WebSocket, workers, MQTT, DB, Redis)
+#   DNS       → Cloudflare (iotaps.com → Pages, api.iotaps.com → VPS)
+# ============================================================
+
+
+# ████████████████████████████████████████████████████████████
+# PART 1: CLOUDFLARE PAGES (Frontend) — Do this FIRST
+# ████████████████████████████████████████████████████████████
+
+# 1. Go to https://dash.cloudflare.com → Pages → Create a project
+# 2. Connect your GitHub repo: TheVasuA/iotaps
+# 3. Configure build settings:
+#      Framework preset:  None
+#      Build command:     cd web && npm install && npm run build
+#      Build output:      web/dist
+#      Root directory:    /  (leave default)
+# 4. Add environment variable:
+#      VITE_GOOGLE_CLIENT_ID = 622587244689-ok0kqi83d23u2esdv5pk6t0alen4jro2.apps.googleusercontent.com
+# 5. Deploy — Cloudflare builds and hosts your frontend globally.
+# 6. Note the URL: https://iotaps-web.pages.dev (or your custom domain)
+
+
+# ████████████████████████████████████████████████████████████
+# PART 2: CLOUDFLARE DNS SETUP
+# ████████████████████████████████████████████████████████████
+
+# Go to https://dash.cloudflare.com → iotaps.com → DNS → Set these records:
+#
+# Type    Name              Content                    Proxy
+# CNAME   @ (iotaps.com)    iotaps-web.pages.dev       Proxied (orange)
+# CNAME   www               iotaps-web.pages.dev       Proxied (orange)
+# A       api               94.136.184.17              DNS only (grey) ← for WebSocket
+# A       mqtt              94.136.184.17              DNS only (grey) ← for MQTT
+#
+# In Cloudflare Pages → Custom domains → Add: iotaps.com, www.iotaps.com
+#
+# NOTE: api.iotaps.com MUST be grey cloud (DNS only) so WebSocket
+# connections go direct to VPS without Cloudflare buffering.
+
+
+# ████████████████████████████████████████████████████████████
+# PART 3: VPS FRESH SETUP (Backend)
+# ████████████████████████████████████████████████████████████
+
+# --- 3.1 System setup ---
 sudo apt update && sudo apt upgrade -y
 sudo apt install -y curl git
 
@@ -10,11 +59,7 @@ sudo systemctl start docker
 # Install Docker Compose (v2 plugin)
 sudo apt install -y docker-compose-plugin
 
-# Install Node.js (for frontend build)
-curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
-sudo apt install -y nodejs
-
-# 2. Open firewall ports
+# --- 3.2 Firewall ---
 sudo ufw allow 22/tcp
 sudo ufw allow 80/tcp
 sudo ufw allow 443/tcp
@@ -22,75 +67,78 @@ sudo ufw allow 1883/tcp
 sudo ufw allow 9001/tcp
 sudo ufw --force enable
 
-# 3. Clone the project
+# --- 3.3 Clone project ---
 cd /projects
 git clone https://github.com/TheVasuA/iotaps.git
 cd iotaps
 
-# 4. Copy your .env file (contains secrets — do NOT commit)
+# --- 3.4 Create .env (paste from your local d:\iotaps\.env) ---
 nano .env
-# Paste the full .env content from your local d:\iotaps\.env
 
-# 5. Build frontend
-cd web
-npm install
-npm run build
-cd ..
-
-# 6. Build and start all services
-docker compose build fastapi-api
+# --- 3.5 Build and start all backend services ---
+docker compose build --no-cache
 docker compose up -d
 
-# 7. Wait for DB to be healthy, then run migrations
+# --- 3.6 Run database migrations ---
 sleep 15
 docker exec -w /srv/app iotaps-api alembic upgrade head
 
-# 8. Set Postgres password (if fresh volume)
-docker exec iotaps-postgres psql -U iotaps -d iotaps -c "ALTER USER iotaps PASSWORD 'zzo0p5d3-7hmiGuxe3xWiyry1gZWu_J0';"
-
-# 9. Verify everything is running
+# --- 3.7 Verify services ---
 docker compose ps
+# Should show: iotaps-api, iotaps-ws, iotaps-workers, iotaps-nginx,
+#              iotaps-mosquitto, iotaps-postgres, iotaps-redis
+
 curl http://localhost:8000/api/v1/health
+# Should return {"status":"ok"}
 
 
-Update DNS (Cloudflare)
-Go to https://dash.cloudflare.com → iotaps.com → DNS → Update these records:
+# ████████████████████████████████████████████████████████████
+# PART 4: POST-DEPLOY SETUP
+# ████████████████████████████████████████████████████████████
 
-Type	Name	Content	Proxy
-A	@ (iotaps.com)	94.136.184.17	Proxied (orange)
-A	www	94.136.184.17	Proxied (orange)
-A	mqtt	94.136.184.17	DNS only (grey) ← critical
-
-
-# From your local Windows machine:
-Test-NetConnection mqtt.iotaps.com -Port 1883
-# Should show TcpTestSucceeded: True
-
-# Website:
-# Open https://iotaps.com in browser
-
-
-Go to https://dash.cloudflare.com → iotaps.com → DNS → Update these records:
-
-Type	Name	Content	Proxy
-A	@ (iotaps.com)	94.136.184.17	Proxied (orange)
-A	www	94.136.184.17	Proxied (orange)
-A	mqtt	94.136.184.17	DNS only (grey) ← critical
-
-# From your local Windows machine:
-Test-NetConnection mqtt.iotaps.com -Port 1883
-# Should show TcpTestSucceeded: True
-
-# Website:
-# Open https://iotaps.com in browser
-
-# Get your admin token
+# --- 4.1 Register MQTT node ---
 TOKEN=$(curl -s -X POST http://localhost:8000/api/v1/auth/login \
   -H "Content-Type: application/json" \
-  -d '{"email":"thevasu.a@gmail.com","password":"p@rv2thiV"}' | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
+  -d '{"email":"admin@iotaps.dev","password":"Admin123!"}' | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
 
-# Register MQTT node
 curl -X POST http://localhost:8000/api/v1/admin/mqtt-nodes \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $TOKEN" \
   -d '{"ip":"mosquitto","port":1883,"capacity":10000}'
+
+# --- 4.2 Verify from your Windows machine ---
+# Test-NetConnection mqtt.iotaps.com -Port 1883
+# Open https://iotaps.com in browser
+
+
+# ████████████████████████████████████████████████████████████
+# ONGOING UPDATES
+# ████████████████████████████████████████████████████████████
+
+# Frontend: just git push → Cloudflare auto-rebuilds & deploys
+
+# Backend (SSH to VPS):
+cd /projects/iotaps
+git pull origin main
+docker compose build --no-cache fastapi-api
+docker compose up -d --no-deps fastapi-api fastapi-ws workers nginx
+docker exec -w /srv/app iotaps-api alembic upgrade head
+
+
+# ████████████████████████████████████████████████████████████
+# NUCLEAR OPTION: FULL VPS WIPE & REDEPLOY
+# ████████████████████████████████████████████████████████████
+
+# WARNING: This destroys ALL data (database, redis, mqtt logs)
+cd /projects/iotaps
+docker compose down -v --rmi all
+docker system prune -af --volumes
+cd /projects
+rm -rf iotaps
+git clone https://github.com/TheVasuA/iotaps.git
+cd iotaps
+nano .env
+docker compose build --no-cache
+docker compose up -d
+sleep 15
+docker exec -w /srv/app iotaps-api alembic upgrade head
