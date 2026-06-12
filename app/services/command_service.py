@@ -124,6 +124,7 @@ class CommandRecord:
     org_id: str
     type: str
     value: Optional[float]
+    target: Optional[str]
     status: CommandStatus
     created_at: str
     updated_at: str
@@ -135,6 +136,7 @@ class CommandRecord:
             "org_id": self.org_id,
             "type": self.type,
             "value": self.value,
+            "target": self.target,
             "status": self.status.value,
             "created_at": self.created_at,
             "updated_at": self.updated_at,
@@ -148,6 +150,7 @@ class CommandRecord:
             org_id=raw["org_id"],
             type=raw["type"],
             value=raw.get("value"),
+            target=raw.get("target"),
             status=CommandStatus(raw["status"]),
             created_at=raw["created_at"],
             updated_at=raw.get("updated_at", raw["created_at"]),
@@ -157,9 +160,11 @@ class CommandRecord:
 def _command_mqtt_payload(record: CommandRecord) -> str:
     """Build the MQTT command payload published to the device (design contract).
 
-    ``iotaps/{org}/{dev}/command  {"command_id": ..., "type": ..., "value": ...}``
+    ``iotaps/{org}/{dev}/command  {"command_id": ..., "type": ..., "target": ..., "value": ...}``
     """
     body: dict[str, Any] = {"command_id": record.command_id, "type": record.type}
+    if record.target:
+        body["target"] = record.target
     if record.value is not None:
         body["value"] = record.value
     return json.dumps(body)
@@ -379,6 +384,7 @@ class CommandService:
         *,
         type: str,
         value: Optional[float] = None,
+        target: Optional[str] = None,
         ack_timeout_seconds: int = 0,
     ) -> CommandRecord:
         """Issue a command: publish when online (SENT), queue when offline (QUEUED).
@@ -413,6 +419,7 @@ class CommandService:
             org_id=str(device.org_id),
             type=type,
             value=value,
+            target=target,
             status=status,
             created_at=now,
             updated_at=now,
@@ -454,7 +461,7 @@ class CommandService:
         else:
             # Offline: RPUSH onto the device queue; reject on failure (Req 9.5).
             queued_payload = json.dumps(
-                {"command_id": command_id, "type": type, "value": value}
+                {"command_id": command_id, "type": type, "value": value, "target": target}
             )
             try:
                 ok = await self._redis.rpush(

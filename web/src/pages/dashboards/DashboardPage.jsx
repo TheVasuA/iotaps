@@ -237,6 +237,7 @@ export default function DashboardPage() {
       const result = await issueCommand(cmd.deviceId, {
         type: cmd.type,
         value: cmd.value,
+        target: cmd.command || undefined,
       });
       if (result.status === "QUEUED") {
         toast.info("Command queued — device is offline, will execute on reconnect");

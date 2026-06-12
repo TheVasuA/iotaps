@@ -9,15 +9,16 @@ import apiClient from "@/lib/apiClient";
  * Issue a control command to a device (Req 9.1 ON/OFF, 9.2 slider value).
  *
  * @param {string} deviceId
- * @param {{ type: "on"|"off"|"value", value?: number }} command
+ * @param {{ type: "on"|"off"|"value", value?: number, target?: string }} command
  * @returns {Promise<{command_id, device_id, type, value, status, created_at, updated_at}>}
  *   The response carries the initial status: SENT when the device is online or
  *   QUEUED when it is offline. CONFIRMED/UNACKNOWLEDGED arrive later over the
  *   WebSocket command_status channel (Req 9.4, 9.7).
  */
-export async function issueCommand(deviceId, { type, value } = {}) {
+export async function issueCommand(deviceId, { type, value, target } = {}) {
   const body = { type };
   if (value !== undefined && value !== null) body.value = value;
+  if (target) body.target = target;
   const { data } = await apiClient.post(`/devices/${deviceId}/commands`, body);
   return data;
 }

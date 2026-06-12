@@ -96,8 +96,16 @@ class DashboardService:
         return dashboard
 
     async def list_dashboards(self) -> list[Dashboard]:
-        """List dashboards in the caller's org (Req 3.2)."""
+        """List dashboards owned by the caller (Req 3.2).
+
+        Each user sees only their own dashboards. Super_Admin sees all within
+        the org through TenantScope bypass.
+        """
         stmt = self._scope.select(Dashboard).order_by(Dashboard.created_at.desc())
+        owner = self._owner_user_uuid()
+        # Filter by owner so users only see their own dashboards (not the whole org)
+        if owner and not self._scope.bypass:
+            stmt = stmt.where(Dashboard.owner_user_id == owner)
         result = await self._session.execute(stmt)
         return list(result.scalars().all())
 

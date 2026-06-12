@@ -41,6 +41,7 @@ router = APIRouter(prefix="/devices", tags=["commands"])
 class IssueCommandRequest(BaseModel):
     type: str = Field(description="on | off | value")
     value: float | None = Field(default=None)
+    target: str | None = Field(default=None, description="Target pin/component (e.g. led1, led2, brightness)")
 
     model_config = {"extra": "forbid"}
 
@@ -96,37 +97,51 @@ class _MqttPool:
     """Maintains a single persistent MQTT connection for publishing commands.
 
     Falls back to a one-shot connection if the persistent one is unavailable.
-    Thread-safe via asyncio.Lock.
+    The lock protects connection setup/teardown but publish itself is safe to
+    call without holding the lock (aiomqtt publishes are atomic).
     """
 
     def __init__(self):
         self._client = None
         self._lock = asyncio.Lock()
 
+    async def _ensure_connection(self):
+        """Ensure the persistent connection exists. Returns the client or None."""
+        import aiomqtt
+
+        if self._client is not None:
+            return self._client
+
+        async with self._lock:
+            # Double-check after acquiring lock
+            if self._client is not None:
+                return self._client
+            try:
+                settings = get_settings()
+                client = aiomqtt.Client(
+                    hostname=settings.mqtt_host,
+                    port=settings.mqtt_port,
+                    keepalive=60,
+                )
+                await client.__aenter__()
+                self._client = client
+                return self._client
+            except Exception:
+                self._client = None
+                return None
+
     async def publish(self, topic: str, payload: str) -> None:
         import aiomqtt
 
-        settings = get_settings()
+        client = await self._ensure_connection()
 
-        # Try persistent connection first
-        async with self._lock:
-            if self._client is None:
-                try:
-                    self._client = aiomqtt.Client(
-                        hostname=settings.mqtt_host,
-                        port=settings.mqtt_port,
-                        keepalive=60,
-                    )
-                    await self._client.__aenter__()
-                except Exception:
-                    self._client = None
-
-            if self._client is not None:
-                try:
-                    await self._client.publish(topic, payload)
-                    return
-                except Exception:
-                    # Connection died, clean up and fall through
+        if client is not None:
+            try:
+                await client.publish(topic, payload)
+                return
+            except Exception:
+                # Connection died, reset and fall through
+                async with self._lock:
                     try:
                         await self._client.__aexit__(None, None, None)
                     except Exception:
@@ -135,8 +150,9 @@ class _MqttPool:
 
         # Fallback: one-shot connection (slow but reliable)
         _mqtt_logger.warning("mqtt_pool_fallback", extra={"topic": topic})
-        async with aiomqtt.Client(hostname=settings.mqtt_host, port=settings.mqtt_port) as client:
-            await client.publish(topic, payload)
+        settings = get_settings()
+        async with aiomqtt.Client(hostname=settings.mqtt_host, port=settings.mqtt_port) as c:
+            await c.publish(topic, payload)
 
     async def close(self):
         async with self._lock:
@@ -184,6 +200,7 @@ async def issue_command(
         device_id,
         type=payload.type,
         value=payload.value,
+        target=payload.target,
         ack_timeout_seconds=settings.command_ack_timeout_seconds,
     )
     return _status_out(record)
