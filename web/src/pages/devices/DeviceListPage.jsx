@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, memo } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Plus,
@@ -87,6 +87,47 @@ function CredentialCell({ value, secret }) {
   );
 }
 
+// Memoized table row: only re-renders when this specific device's data changes.
+// Prevents the whole table from re-rendering when a single device status updates.
+const DeviceRow = memo(function DeviceRow({ device: d, groupName }) {
+  const navigate = useNavigate();
+  return (
+    <tr
+      onClick={() => navigate(`/devices/${d.id}`)}
+      className="cursor-pointer transition-colors hover:bg-accent/50"
+    >
+      <td className="px-4 py-3">
+        <div className="font-medium text-foreground">
+          {d.label || d.device_uid || "(unnamed)"}
+        </div>
+        {d.label && d.device_uid ? (
+          <div className="text-xs text-muted-foreground">
+            {d.device_uid}
+          </div>
+        ) : null}
+      </td>
+      <td className="px-4 py-3">
+        <Badge variant={d.status === "online" ? "success" : "muted"}>
+          {d.status}
+        </Badge>
+      </td>
+      <td className="px-4 py-3 text-muted-foreground">
+        {groupName || "—"}
+      </td>
+      <td className="px-4 py-3">
+        {d.maintenance_mode ? (
+          <Badge variant="warning">Maintenance</Badge>
+        ) : (
+          <span className="text-muted-foreground">—</span>
+        )}
+      </td>
+      <td className="px-4 py-3">
+        <CredentialCell value={d.device_token} secret />
+      </td>
+    </tr>
+  );
+});
+
 export default function DeviceListPage() {
   const dispatch = useAppDispatch();
   const navigate = useNavigate();
@@ -109,17 +150,22 @@ export default function DeviceListPage() {
 
   // Subscribe to real-time device status updates via WebSocket instead of
   // polling. Each device's channel pushes online/offline changes instantly.
+  // Use device IDs as a stable dependency to avoid re-subscribing on every
+  // status change (which would cause table flicker).
+  const deviceIds = useMemo(() => devices.map((d) => d.id).join(","), [devices]);
+
   useEffect(() => {
-    if (!devices.length) return;
-    const unsubs = devices.map((d) =>
-      realtimeClient.subscribe(`device:${d.id}`, (msg) => {
-        if (msg.type === "status" && msg.device_id === d.id) {
+    if (!deviceIds) return;
+    const ids = deviceIds.split(",");
+    const unsubs = ids.map((id) =>
+      realtimeClient.subscribe(`device:${id}`, (msg) => {
+        if (msg.type === "status" && msg.device_id === id) {
           dispatch(updateDeviceStatus({ device_id: msg.device_id, status: msg.status }));
         }
       })
     );
     return () => unsubs.forEach((fn) => fn());
-  }, [dispatch, devices.length]); // re-subscribe when device list changes
+  }, [dispatch, deviceIds]);
 
   const groupName = (id) => groups.find((g) => g.id === id)?.name;
 
@@ -245,40 +291,7 @@ export default function DeviceListPage() {
               </tr>
             ) : (
               visible.map((d) => (
-                <tr
-                  key={d.id}
-                  onClick={() => navigate(`/devices/${d.id}`)}
-                  className="cursor-pointer transition-colors hover:bg-accent/50"
-                >
-                  <td className="px-4 py-3">
-                    <div className="font-medium text-foreground">
-                      {d.label || d.device_uid || "(unnamed)"}
-                    </div>
-                    {d.label && d.device_uid ? (
-                      <div className="text-xs text-muted-foreground">
-                        {d.device_uid}
-                      </div>
-                    ) : null}
-                  </td>
-                  <td className="px-4 py-3">
-                    <Badge variant={d.status === "online" ? "success" : "muted"}>
-                      {d.status}
-                    </Badge>
-                  </td>
-                  <td className="px-4 py-3 text-muted-foreground">
-                    {groupName(d.group_id) || "—"}
-                  </td>
-                  <td className="px-4 py-3">
-                    {d.maintenance_mode ? (
-                      <Badge variant="warning">Maintenance</Badge>
-                    ) : (
-                      <span className="text-muted-foreground">—</span>
-                    )}
-                  </td>
-                  <td className="px-4 py-3">
-                    <CredentialCell value={d.device_token} secret />
-                  </td>
-                </tr>
+                <DeviceRow key={d.id} device={d} groupName={groupName(d.group_id)} />
               ))
             )}
           </tbody>
