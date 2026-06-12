@@ -1,0 +1,96 @@
+# 1. Update system & install Docker
+sudo apt update && sudo apt upgrade -y
+sudo apt install -y curl git
+
+# Install Docker
+curl -fsSL https://get.docker.com | sh
+sudo systemctl enable docker
+sudo systemctl start docker
+
+# Install Docker Compose (v2 plugin)
+sudo apt install -y docker-compose-plugin
+
+# Install Node.js (for frontend build)
+curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+sudo apt install -y nodejs
+
+# 2. Open firewall ports
+sudo ufw allow 22/tcp
+sudo ufw allow 80/tcp
+sudo ufw allow 443/tcp
+sudo ufw allow 1883/tcp
+sudo ufw allow 9001/tcp
+sudo ufw --force enable
+
+# 3. Clone the project
+cd /projects
+git clone https://github.com/TheVasuA/iotaps.git
+cd iotaps
+
+# 4. Copy your .env file (contains secrets — do NOT commit)
+nano .env
+# Paste the full .env content from your local d:\iotaps\.env
+
+# 5. Build frontend
+cd web
+npm install
+npm run build
+cd ..
+
+# 6. Build and start all services
+docker compose build fastapi-api
+docker compose up -d
+
+# 7. Wait for DB to be healthy, then run migrations
+sleep 15
+docker exec -w /srv/app iotaps-api alembic upgrade head
+
+# 8. Set Postgres password (if fresh volume)
+docker exec iotaps-postgres psql -U iotaps -d iotaps -c "ALTER USER iotaps PASSWORD 'zzo0p5d3-7hmiGuxe3xWiyry1gZWu_J0';"
+
+# 9. Verify everything is running
+docker compose ps
+curl http://localhost:8000/api/v1/health
+
+
+Update DNS (Cloudflare)
+Go to https://dash.cloudflare.com → iotaps.com → DNS → Update these records:
+
+Type	Name	Content	Proxy
+A	@ (iotaps.com)	94.136.184.17	Proxied (orange)
+A	www	94.136.184.17	Proxied (orange)
+A	mqtt	94.136.184.17	DNS only (grey) ← critical
+
+
+# From your local Windows machine:
+Test-NetConnection mqtt.iotaps.com -Port 1883
+# Should show TcpTestSucceeded: True
+
+# Website:
+# Open https://iotaps.com in browser
+
+
+Go to https://dash.cloudflare.com → iotaps.com → DNS → Update these records:
+
+Type	Name	Content	Proxy
+A	@ (iotaps.com)	94.136.184.17	Proxied (orange)
+A	www	94.136.184.17	Proxied (orange)
+A	mqtt	94.136.184.17	DNS only (grey) ← critical
+
+# From your local Windows machine:
+Test-NetConnection mqtt.iotaps.com -Port 1883
+# Should show TcpTestSucceeded: True
+
+# Website:
+# Open https://iotaps.com in browser
+
+# Get your admin token
+TOKEN=$(curl -s -X POST http://localhost:8000/api/v1/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"thevasu.a@gmail.com","password":"p@rv2thiV"}' | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
+
+# Register MQTT node
+curl -X POST http://localhost:8000/api/v1/admin/mqtt-nodes \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{"ip":"mosquitto","port":1883,"capacity":10000}'
