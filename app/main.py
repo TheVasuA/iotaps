@@ -105,6 +105,9 @@ async def lifespan(app: FastAPI):
 
     logger.info("application_startup", extra={"env": get_settings().app_env})
     yield
+    # Clean up persistent connections on shutdown.
+    from app.api.v1.commands import _mqtt_pool
+    await _mqtt_pool.close()
     await close_redis()
     logger.info("application_shutdown")
 
