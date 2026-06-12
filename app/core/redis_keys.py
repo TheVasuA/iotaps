@@ -39,9 +39,15 @@ def _key(*parts: str) -> str:
 # Telemetry ingest queue (Req 6.1, 6.2)
 # ---------------------------------------------------------------------------
 # The MQTT_Listener LPUSHes validated telemetry payloads here; the Batch_Writer
-# drains batches of up to 1000 (larger when the backlog exceeds 1000) and only
-# LTRIMs after a successful TimescaleDB commit.
+# drains batches and commits to TimescaleDB. Queue is capped at MAX_QUEUE_SIZE
+# to prevent unbounded memory growth under load.
 INGEST_QUEUE = _key("ingest", "telemetry")
+MAX_QUEUE_SIZE = 10000
+
+
+def latest_value_key(device_id: str) -> str:
+    """Latest telemetry value for a device (overwritten on each message)."""
+    return _key("latest", device_id)
 
 
 # ---------------------------------------------------------------------------

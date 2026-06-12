@@ -59,8 +59,9 @@ logger = get_logger(__name__)
 # the queue does not grow unbounded (Req 6.2).
 BATCH_SIZE = 1000
 
-# Idle poll interval when the queue is empty (design "sleep(50ms)").
-EMPTY_SLEEP_SECONDS = 0.05
+# Idle poll interval — batch writer now runs every 60s for DB persistence.
+# Real-time display is handled directly by the MQTT listener (no queue needed).
+EMPTY_SLEEP_SECONDS = 60.0
 
 # Exponential backoff bounds applied while TimescaleDB is unavailable (Req 6.9).
 BACKOFF_INITIAL_SECONDS = 0.5
@@ -213,20 +214,8 @@ async def process_batch(
     # the entries we pulled. LTRIM keeps indices [batch_len, -1].
     await redis.ltrim(rk.INGEST_QUEUE, batch_len, -1)
 
-    # Publish the latest value per device after the commit (Req 6.3, Property 6).
-    for device_id, env in latest_value_per_device(envelopes).items():
-        message = json.dumps(
-            {
-                "type": "telemetry",
-                "device_id": device_id,
-                "ts": env["ts"],
-                "data": env["data"],
-            }
-        )
-        try:
-            await redis.publish(rk.telemetry_channel(device_id), message)
-        except Exception:  # pragma: no cover - publish must not undo the commit
-            logger.exception("telemetry_publish_failed", extra={"device_id": device_id})
+    # Real-time pub/sub is handled by the MQTT listener directly now.
+    # The batch writer only persists to DB for historical queries.
 
     return batch_len
 

@@ -223,12 +223,16 @@ async def _resolve_device_uuid(redis: Any, token: str) -> str:
 
 
 async def handle_telemetry(redis: Any, parsed: ParsedTopic, payload: bytes | str) -> bool:
-    """Validate telemetry and LPUSH an envelope onto the ingest queue (Req 6.1).
+    """Process telemetry: update latest value in Redis + publish to WebSocket.
 
-    The enqueued envelope wraps the raw payload with the org/device ids parsed
-    from the topic so the Batch_Writer (5.2) can persist without re-parsing
-    topics. Returns ``True`` when a message was enqueued, ``False`` when the
-    payload was rejected.
+    Architecture (Blynk-style):
+    1. SET latest:{device_id} = data (overwrite, instant, no queue growth)
+    2. PUBLISH to Redis pub/sub → WebSocket → Dashboard (real-time, <1s)
+    3. LPUSH to ingest queue (capped at 10K) for periodic DB persistence
+
+    The queue is only for historical storage. Real-time display reads from
+    the latest value key directly. Queue overflow drops oldest messages
+    (stale telemetry has no value).
     """
     validated = validate_telemetry_payload(payload)
     if validated is None:
@@ -238,31 +242,44 @@ async def handle_telemetry(redis: Any, parsed: ParsedTopic, payload: bytes | str
         )
         return False
 
-    # Resolve device UUID from token for 3-segment topics so the batch writer
-    # publishes telemetry to the correct Redis channel (keyed by UUID).
+    # Resolve device UUID from token for 3-segment topics
     device_id = await _resolve_device_uuid(redis, parsed.device_id)
 
-    envelope = {
+    # 1. Write latest value directly to Redis (overwrite, no queue)
+    latest_data = json.dumps({"ts": validated["ts"], "data": validated["data"]})
+    await redis.set(rk.latest_value_key(device_id), latest_data, ex=300)  # TTL 5min
+
+    # 2. Publish to WebSocket immediately (real-time dashboard update)
+    message = json.dumps({
+        "type": "telemetry",
+        "device_id": device_id,
+        "ts": validated["ts"],
+        "data": validated["data"],
+    })
+    try:
+        await redis.publish(rk.telemetry_channel(device_id), message)
+    except Exception:
+        pass
+
+    # 3. Queue for DB persistence (capped — drop oldest if full)
+    envelope = json.dumps({
         "org_id": parsed.org_id,
         "device_id": device_id,
         "ts": validated["ts"],
         "data": validated["data"],
-    }
-    await redis.lpush(rk.INGEST_QUEUE, json.dumps(envelope))
+    })
+    await redis.lpush(rk.INGEST_QUEUE, envelope)
+    # Cap queue at MAX_QUEUE_SIZE — trim oldest entries beyond limit
+    await redis.ltrim(rk.INGEST_QUEUE, 0, rk.MAX_QUEUE_SIZE - 1)
 
-    # Count the message against the org's monthly Message_Quota (Req 15.3-15.6).
-    # This only meters Free/ambiguous plans and never blocks ingestion: the
-    # telemetry is already enqueued above, so a quota error cannot drop data.
+    # Count against quota (best-effort, never blocks)
     try:
         plan = await resolve_org_plan(redis, parsed.org_id)
         await count_telemetry_message(
             redis, parsed.org_id, plan, message_type=parsed.message_type
         )
-    except Exception:  # pragma: no cover - quota bookkeeping must never lose data
-        logger.warning(
-            "quota_count_failed",
-            extra={"org_id": parsed.org_id, "device_id": parsed.device_id},
-        )
+    except Exception:
+        pass
     return True
 
 
