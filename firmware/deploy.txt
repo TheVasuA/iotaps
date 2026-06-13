@@ -158,3 +158,12 @@ Option B: Add SSL to your VPS with certbot (keep grey cloud):
 # On VPS:
 sudo apt install -y certbot python3-certbot-nginx
 sudo certbot --nginx -d api.iotaps.com -d iotaps.com -d www.iotaps.com
+
+
+resatrt complete
+cd ~/projects/iotaps
+git pull origin main
+docker compose down
+docker rmi iotaps/api:latest
+docker compose build --no-cache
+docker compose up -d

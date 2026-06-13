@@ -96,26 +96,38 @@ class DashboardService:
         return dashboard
 
     async def list_dashboards(self) -> list[Dashboard]:
-        """List dashboards owned by the caller (Req 3.2).
+        """List dashboards owned by the caller — strict per-user isolation.
 
-        Each user sees only their own dashboards. Super_Admin sees all within
-        the org through TenantScope bypass.
+        Each user sees ONLY their own dashboards regardless of org_id.
+        Super_Admin sees all.
         """
-        stmt = self._scope.select(Dashboard).order_by(Dashboard.created_at.desc())
+        from sqlalchemy import select as sa_select
         owner = self._owner_user_uuid()
-        # Filter by owner so users only see their own dashboards (not the whole org)
-        if owner and not self._scope.bypass:
-            stmt = stmt.where(Dashboard.owner_user_id == owner)
+        if self._scope.bypass:
+            # Super_Admin sees all dashboards
+            stmt = sa_select(Dashboard).order_by(Dashboard.created_at.desc())
+        elif owner:
+            # Strict per-user: filter by owner_user_id, NOT org_id
+            stmt = sa_select(Dashboard).where(
+                Dashboard.owner_user_id == owner
+            ).order_by(Dashboard.created_at.desc())
+        else:
+            # No user context — return nothing
+            return []
         result = await self._session.execute(stmt)
         return list(result.scalars().all())
 
     async def get_dashboard(self, dashboard_id: uuid.UUID) -> Dashboard:
-        """Fetch a dashboard by id, enforcing tenant + owner ownership (Req 3.3)."""
-        dashboard = await self._scope.get(Dashboard, dashboard_id)
-        # Non-admin users can only access their own dashboards
+        """Fetch a dashboard by id — strict per-user ownership check."""
+        dashboard = await self._session.get(Dashboard, dashboard_id)
+        if dashboard is None:
+            raise NotFoundError("Dashboard not found")
+        # Super_Admin can access any dashboard
+        if self._scope.bypass:
+            return dashboard
+        # Strict per-user check
         owner = self._owner_user_uuid()
-        if owner and not self._scope.bypass and dashboard.owner_user_id != owner:
-            from app.core.errors import NotFoundError
+        if not owner or dashboard.owner_user_id != owner:
             raise NotFoundError("Dashboard not found")
         return dashboard
 
@@ -162,13 +174,9 @@ class DashboardService:
         config: dict | None = None,
         layout: dict | None = None,
     ) -> Widget:
-        """Add a widget to a dashboard the caller owns (Req 7.1, 7.3).
-
-        Resolving the parent dashboard through the tenant scope first guarantees
-        widgets are only ever added to dashboards in the caller's org (Req 3.3).
-        """
-        # Enforce tenant ownership of the parent dashboard before mutating.
-        await self._scope.get(Dashboard, dashboard_id)
+        """Add a widget to a dashboard the caller owns (Req 7.1, 7.3)."""
+        # get_dashboard enforces per-user ownership
+        await self.get_dashboard(dashboard_id)
 
         if type not in WIDGET_TYPES:
             raise ValidationError(
@@ -191,19 +199,11 @@ class DashboardService:
     async def _get_widget(
         self, dashboard_id: uuid.UUID, widget_id: uuid.UUID
     ) -> Widget:
-        """Fetch a widget, enforcing it belongs to the caller's dashboard.
-
-        The parent dashboard is resolved through the tenant scope (Req 3.3) and
-        the widget must reference that exact dashboard, so a widget id from
-        another dashboard/org cannot be reached.
-        """
-        await self._scope.get(Dashboard, dashboard_id)
+        """Fetch a widget, enforcing it belongs to the caller's dashboard."""
+        # get_dashboard enforces per-user ownership
+        await self.get_dashboard(dashboard_id)
         widget = await self._session.get(Widget, widget_id)
-        if (
-            widget is None
-            or widget.dashboard_id != dashboard_id
-            or not self._scope.owns(widget)
-        ):
+        if widget is None or widget.dashboard_id != dashboard_id:
             raise NotFoundError("Widget not found in this dashboard")
         return widget
 
@@ -245,9 +245,11 @@ class DashboardService:
         return widget
 
     async def list_widgets(self, dashboard_id: uuid.UUID) -> list[Widget]:
-        """List widgets for a dashboard the caller owns (Req 3.2, 3.3)."""
-        await self._scope.get(Dashboard, dashboard_id)
-        stmt = self._scope.select(Widget).where(Widget.dashboard_id == dashboard_id)
+        """List widgets for a dashboard the caller owns — per-user isolation."""
+        from sqlalchemy import select as sa_select
+        # get_dashboard already enforces ownership
+        await self.get_dashboard(dashboard_id)
+        stmt = sa_select(Widget).where(Widget.dashboard_id == dashboard_id)
         result = await self._session.execute(stmt)
         return list(result.scalars().all())
 
