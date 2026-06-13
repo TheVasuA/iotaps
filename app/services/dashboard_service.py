@@ -110,8 +110,14 @@ class DashboardService:
         return list(result.scalars().all())
 
     async def get_dashboard(self, dashboard_id: uuid.UUID) -> Dashboard:
-        """Fetch a dashboard by id, enforcing tenant ownership (Req 3.3)."""
-        return await self._scope.get(Dashboard, dashboard_id)
+        """Fetch a dashboard by id, enforcing tenant + owner ownership (Req 3.3)."""
+        dashboard = await self._scope.get(Dashboard, dashboard_id)
+        # Non-admin users can only access their own dashboards
+        owner = self._owner_user_uuid()
+        if owner and not self._scope.bypass and dashboard.owner_user_id != owner:
+            from app.core.errors import NotFoundError
+            raise NotFoundError("Dashboard not found")
+        return dashboard
 
     async def update_dashboard(
         self,
