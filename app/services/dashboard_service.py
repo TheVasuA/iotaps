@@ -98,22 +98,15 @@ class DashboardService:
     async def list_dashboards(self) -> list[Dashboard]:
         """List dashboards owned by the caller — strict per-user isolation.
 
-        Each user sees ONLY their own dashboards regardless of org_id.
-        Super_Admin sees all.
+        Every user (including Super_Admin) sees ONLY their own dashboards.
         """
         from sqlalchemy import select as sa_select
         owner = self._owner_user_uuid()
-        if self._scope.bypass:
-            # Super_Admin sees all dashboards
-            stmt = sa_select(Dashboard).order_by(Dashboard.created_at.desc())
-        elif owner:
-            # Strict per-user: filter by owner_user_id, NOT org_id
-            stmt = sa_select(Dashboard).where(
-                Dashboard.owner_user_id == owner
-            ).order_by(Dashboard.created_at.desc())
-        else:
-            # No user context — return nothing
+        if not owner:
             return []
+        stmt = sa_select(Dashboard).where(
+            Dashboard.owner_user_id == owner
+        ).order_by(Dashboard.created_at.desc())
         result = await self._session.execute(stmt)
         return list(result.scalars().all())
 
@@ -122,10 +115,6 @@ class DashboardService:
         dashboard = await self._session.get(Dashboard, dashboard_id)
         if dashboard is None:
             raise NotFoundError("Dashboard not found")
-        # Super_Admin can access any dashboard
-        if self._scope.bypass:
-            return dashboard
-        # Strict per-user check
         owner = self._owner_user_uuid()
         if not owner or dashboard.owner_user_id != owner:
             raise NotFoundError("Dashboard not found")
