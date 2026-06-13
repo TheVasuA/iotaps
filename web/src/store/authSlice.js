@@ -8,6 +8,7 @@ import {
 } from "@/lib/theme";
 import { tokenStore } from "@/lib/apiClient";
 import { logout as logoutApi } from "@/lib/authApi";
+import { resetDashboards } from "@/store/dashboardsSlice";
 
 // Auth slice: owns the authenticated principal (id, org_id, role) and the
 // active visual theme. Role drives the role theme (Req 4.1-4.3); mode drives
@@ -64,6 +65,7 @@ export const logoutAndRevoke = () => async (dispatch) => {
   } catch {
     /* best-effort revocation; clear local state regardless */
   }
+  dispatch(resetDashboards());
   dispatch(logout());
 };
 

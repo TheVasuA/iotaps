@@ -165,6 +165,10 @@ const dashboardsSlice = createSlice({
       state.latest = {};
       state.series = {};
     },
+    // Reset all dashboard state (called on logout to prevent data leaking between users)
+    resetDashboards() {
+      return initialState;
+    },
     // Optimistically apply a layout to the active dashboard (drag/resize) so
     // the canvas reflects the change immediately; persisted via saveLayout.
     setCurrentLayout(state, action) {
@@ -180,6 +184,11 @@ const dashboardsSlice = createSlice({
       .addCase(fetchDashboards.fulfilled, (state, action) => {
         state.status = "succeeded";
         state.items = action.payload;
+        // Clear active dashboard + widgets when the list changes (e.g. new user session)
+        if (action.payload.length === 0) {
+          state.current = null;
+          state.widgets = [];
+        }
       })
       .addCase(fetchDashboards.rejected, (state, action) => {
         state.status = "failed";
@@ -238,6 +247,7 @@ export const {
   telemetryReceived,
   seedSeries,
   clearTelemetry,
+  resetDashboards,
   setCurrentLayout,
 } = dashboardsSlice.actions;
 export default dashboardsSlice.reducer;
