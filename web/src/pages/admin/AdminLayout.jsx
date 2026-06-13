@@ -9,6 +9,7 @@ import {
   Heartbeat,
   ShieldCheck,
   Gauge,
+  Users,
 } from "@phosphor-icons/react";
 import { cn } from "@/lib/utils";
 
@@ -26,6 +27,7 @@ const panels = [
   { to: "/admin/content", label: "Content", icon: FileText },
   { to: "/admin/health", label: "Health & Errors", icon: Heartbeat },
   { to: "/admin/security", label: "Security & Settings", icon: ShieldCheck },
+  { to: "/admin/users", label: "Users", icon: Users },
 ];
 
 export default function AdminLayout() {

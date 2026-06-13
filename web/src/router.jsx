@@ -132,6 +132,7 @@ export const router = createBrowserRouter([
           { path: "content", element: L(() => import("@/pages/admin/ContentPanel")) },
           { path: "health", element: L(() => import("@/pages/admin/HealthPanel")) },
           { path: "security", element: L(() => import("@/pages/admin/SecurityPanel")) },
+          { path: "users", element: L(() => import("@/pages/admin/UsersPanel")) },
         ],
       },
     ],

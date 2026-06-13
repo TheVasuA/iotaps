@@ -229,3 +229,83 @@ async def reassign_device(
         session, device_id, org_id=payload.org_id
     )
     return _device_out(device)
+
+
+# ---------------------------------------------------------------------------
+# User listing & management (new)
+# ---------------------------------------------------------------------------
+class UserDetailOut(BaseModel):
+    id: str
+    email: str
+    role: str
+    org_id: str
+    created_at: str | None
+    device_count: int = 0
+    subscription_days_remaining: int | None = None
+
+
+@router.get("/users", response_model=list[UserDetailOut])
+async def list_users(
+    session: AsyncSession = Depends(get_session),
+    _: Principal = Depends(require_role(ROLE_SUPER_ADMIN)),
+) -> list[UserDetailOut]:
+    """List all platform users with device counts and subscription status."""
+    from sqlalchemy import func, select
+    from app.models.billing import Subscription
+    from datetime import datetime, timezone
+
+    # Get all users
+    result = await session.execute(select(User).order_by(User.created_at.desc()))
+    users = list(result.scalars().all())
+
+    output = []
+    for user in users:
+        # Count devices in user's org
+        dev_count_result = await session.execute(
+            select(func.count()).select_from(Device).where(Device.org_id == user.org_id)
+        )
+        device_count = int(dev_count_result.scalar_one() or 0)
+
+        # Check subscription remaining days
+        sub_result = await session.execute(
+            select(Subscription).where(
+                Subscription.org_id == user.org_id,
+                Subscription.status == "active",
+            ).order_by(Subscription.current_period_end.desc()).limit(1)
+        )
+        sub = sub_result.scalar_one_or_none()
+        days_remaining = None
+        if sub and sub.current_period_end:
+            delta = sub.current_period_end - datetime.now(timezone.utc)
+            days_remaining = max(0, delta.days)
+
+        output.append(UserDetailOut(
+            id=str(user.id),
+            email=user.email,
+            role=user.role,
+            org_id=str(user.org_id),
+            created_at=str(user.created_at) if hasattr(user, 'created_at') and user.created_at else None,
+            device_count=device_count,
+            subscription_days_remaining=days_remaining,
+        ))
+    return output
+
+
+@router.delete(
+    "/users/{user_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    response_class=Response,
+)
+async def delete_user(
+    user_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session),
+    _: Principal = Depends(require_role(ROLE_SUPER_ADMIN)),
+) -> Response:
+    """Delete a user and their data."""
+    user = await session.get(User, user_id)
+    if user is None:
+        from app.core.errors import NotFoundError
+        raise NotFoundError("User not found")
+    await session.delete(user)
+    await session.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

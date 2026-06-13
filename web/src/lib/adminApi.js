@@ -208,3 +208,17 @@ export async function updateSettings(updates) {
   const { data } = await apiClient.patch("/admin/settings", { updates });
   return data; // { settings }
 }
+
+// ---------------------------------------------------------------------------
+// User management (new)
+// ---------------------------------------------------------------------------
+/** List all platform users with device counts and subscription info. */
+export async function getUsers() {
+  const { data } = await apiClient.get("/admin/users");
+  return data; // [UserDetailOut]
+}
+
+/** Delete a user (Super_Admin only). */
+export async function deleteUser(userId) {
+  await apiClient.delete(`/admin/users/${userId}`);
+}
