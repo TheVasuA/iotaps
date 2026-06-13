@@ -87,12 +87,17 @@ export default function AppLayout() {
           </NavLink>
           <NotificationCenter />
           <ThemeModeToggle />
-          <span className="hidden text-sm font-medium text-muted-foreground sm:inline">
-            {user?.email ? user.email.split("@")[0] : "User"}
-          </span>
-          <Button variant="outline" size="sm" onClick={onLogout}>
+          <div className="hidden sm:flex items-center gap-2">
+            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10 text-primary text-xs font-bold uppercase">
+              {user?.email ? user.email.charAt(0) : "U"}
+            </div>
+            <span className="text-sm text-foreground truncate max-w-[140px]" title={user?.email}>
+              {user?.email ? user.email.split("@")[0] : "User"}
+            </span>
+          </div>
+          <Button variant="ghost" size="sm" onClick={onLogout} className="text-muted-foreground hover:text-destructive">
             <SignOut size={16} />
-            <span className="hidden sm:inline">Sign out</span>
+            <span className="hidden sm:inline">Logout</span>
           </Button>
         </div>
       </header>
