@@ -249,3 +249,71 @@ async def admin_marketing(
 ) -> dict[str, Any]:
     """Return the enterprise lead pipeline and marketing tools (Req 29.5)."""
     return await admin_ops_service.marketing_overview(session)
+
+
+# ---------------------------------------------------------------------------
+# Platform quick controls
+# ---------------------------------------------------------------------------
+@router.post("/platform/flush-cache")
+async def flush_cache(
+    _: Principal = Depends(require_role(ROLE_SUPER_ADMIN)),
+) -> dict:
+    """Flush the Redis cache (clears settings cache, sessions, telemetry cache)."""
+    from app.core.redis_client import get_redis
+    redis = get_redis()
+    if redis:
+        await redis.flushdb()
+    return {"status": "ok", "message": "Redis cache flushed"}
+
+
+@router.post("/platform/toggle-maintenance")
+async def toggle_maintenance(
+    _: Principal = Depends(require_role(ROLE_SUPER_ADMIN)),
+) -> dict:
+    """Toggle platform maintenance mode."""
+    from app.core.redis_client import get_redis
+    redis = get_redis()
+    if redis:
+        current = await redis.get("iotaps:maintenance_mode")
+        new_val = "0" if current and current != b"0" else "1"
+        await redis.set("iotaps:maintenance_mode", new_val)
+        return {"status": "ok", "maintenance_mode": new_val == "1"}
+    return {"status": "error", "message": "Redis unavailable"}
+
+
+@router.post("/platform/disconnect-ws")
+async def disconnect_ws(
+    _: Principal = Depends(require_role(ROLE_SUPER_ADMIN)),
+) -> dict:
+    """Publish a disconnect signal to all WebSocket clients."""
+    from app.core.redis_client import get_redis
+    redis = get_redis()
+    if redis:
+        await redis.publish("iotaps:ws:disconnect_all", "1")
+    return {"status": "ok", "message": "Disconnect signal sent"}
+
+
+@router.post("/platform/backup")
+async def trigger_backup(
+    _: Principal = Depends(require_role(ROLE_SUPER_ADMIN)),
+) -> dict:
+    """Trigger a database backup (pg_dump)."""
+    import asyncio
+    import os
+    from datetime import datetime
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    backup_path = f"/tmp/iotaps_backup_{timestamp}.sql"
+
+    db_user = os.environ.get("POSTGRES_USER", "iotaps")
+    db_name = os.environ.get("POSTGRES_DB", "iotaps")
+    db_host = os.environ.get("POSTGRES_HOST", "postgres")
+
+    cmd = f"pg_dump -h {db_host} -U {db_user} {db_name} > {backup_path}"
+    proc = await asyncio.create_subprocess_shell(cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+    _, stderr = await proc.communicate()
+
+    if proc.returncode == 0:
+        size = os.path.getsize(backup_path) if os.path.exists(backup_path) else 0
+        return {"status": "ok", "path": backup_path, "size_bytes": size}
+    return {"status": "error", "message": stderr.decode()[:200]}

@@ -10,6 +10,9 @@ import {
   ShieldCheck,
   Gauge,
   Users,
+  DeviceMobile,
+  Timer,
+  Wrench,
 } from "@phosphor-icons/react";
 import { cn } from "@/lib/utils";
 
@@ -28,6 +31,9 @@ const panels = [
   { to: "/admin/health", label: "Health & Errors", icon: Heartbeat },
   { to: "/admin/security", label: "Security & Settings", icon: ShieldCheck },
   { to: "/admin/users", label: "Users", icon: Users },
+  { to: "/admin/devices-overview", label: "All Devices", icon: DeviceMobile },
+  { to: "/admin/expiring", label: "Expiring", icon: Timer },
+  { to: "/admin/controls", label: "Controls", icon: Wrench },
 ];
 
 export default function AdminLayout() {

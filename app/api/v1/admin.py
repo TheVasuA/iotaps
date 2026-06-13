@@ -309,3 +309,95 @@ async def delete_user(
     await session.delete(user)
     await session.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+# ---------------------------------------------------------------------------
+# Admin Devices Overview (grouped by user)
+# ---------------------------------------------------------------------------
+class AdminDeviceOut(BaseModel):
+    id: str
+    label: str | None
+    device_uid: str | None
+    status: str
+    owner_email: str | None
+    org_id: str
+    subscription_days_remaining: int | None = None
+    last_telemetry_at: str | None = None
+
+
+@router.get("/devices", response_model=list[AdminDeviceOut])
+async def list_all_devices(
+    session: AsyncSession = Depends(get_session),
+    _: Principal = Depends(require_role(ROLE_SUPER_ADMIN)),
+) -> list[AdminDeviceOut]:
+    """List all platform devices with owner info and subscription status."""
+    from sqlalchemy import select, func
+    from app.models.billing import Subscription
+    from datetime import datetime, timezone
+
+    result = await session.execute(
+        select(Device, User.email).outerjoin(User, User.org_id == Device.org_id).order_by(Device.created_at.desc())
+    )
+    rows = result.all()
+
+    output = []
+    for device, owner_email in rows:
+        # Check subscription
+        sub_result = await session.execute(
+            select(Subscription).where(
+                Subscription.org_id == device.org_id,
+                Subscription.status == "active",
+            ).order_by(Subscription.current_period_end.desc()).limit(1)
+        )
+        sub = sub_result.scalar_one_or_none()
+        days_remaining = None
+        if sub and sub.current_period_end:
+            delta = sub.current_period_end - datetime.now(timezone.utc)
+            days_remaining = max(0, delta.days)
+
+        output.append(AdminDeviceOut(
+            id=str(device.id),
+            label=device.label,
+            device_uid=device.device_uid,
+            status=device.status,
+            owner_email=owner_email,
+            org_id=str(device.org_id),
+            subscription_days_remaining=days_remaining,
+        ))
+    return output
+
+
+@router.get("/expiring-subscriptions")
+async def expiring_subscriptions(
+    days: int = 7,
+    session: AsyncSession = Depends(get_session),
+    _: Principal = Depends(require_role(ROLE_SUPER_ADMIN)),
+) -> list[dict]:
+    """List subscriptions expiring within N days."""
+    from sqlalchemy import select
+    from app.models.billing import Subscription
+    from datetime import datetime, timezone, timedelta
+
+    cutoff = datetime.now(timezone.utc) + timedelta(days=days)
+    result = await session.execute(
+        select(Subscription, User.email).outerjoin(
+            User, User.org_id == Subscription.org_id
+        ).where(
+            Subscription.status == "active",
+            Subscription.current_period_end <= cutoff,
+            Subscription.current_period_end > datetime.now(timezone.utc),
+        ).order_by(Subscription.current_period_end.asc())
+    )
+    rows = result.all()
+    output = []
+    for sub, email in rows:
+        delta = sub.current_period_end - datetime.now(timezone.utc)
+        output.append({
+            "subscription_id": str(sub.id),
+            "org_id": str(sub.org_id),
+            "email": email,
+            "plan": sub.plan,
+            "days_remaining": max(0, delta.days),
+            "expires_at": str(sub.current_period_end),
+        })
+    return output

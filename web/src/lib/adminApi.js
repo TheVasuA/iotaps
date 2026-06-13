@@ -222,3 +222,18 @@ export async function getUsers() {
 export async function deleteUser(userId) {
   await apiClient.delete(`/admin/users/${userId}`);
 }
+
+// ---------------------------------------------------------------------------
+// Admin devices overview
+// ---------------------------------------------------------------------------
+/** List all platform devices with owner and subscription info. */
+export async function getAdminDevices() {
+  const { data } = await apiClient.get("/admin/devices");
+  return data;
+}
+
+/** List subscriptions expiring within N days. */
+export async function getExpiringSubscriptions(days = 7) {
+  const { data } = await apiClient.get("/admin/expiring-subscriptions", { params: { days } });
+  return data;
+}
