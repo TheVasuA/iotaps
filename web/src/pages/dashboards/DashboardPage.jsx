@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, useRef } from "react";
 import { toast } from "sonner";
 import {
   Plus,
@@ -10,6 +10,8 @@ import {
   Trash,
 } from "@phosphor-icons/react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Dialog, DialogBody, DialogFooter } from "@/components/ui/dialog";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import {
   fetchDashboards,
@@ -58,6 +60,10 @@ export default function DashboardPage() {
   const [addOpen, setAddOpen] = useState(false);
   const [configWidget, setConfigWidget] = useState(null);
   const [wsStatus, setWsStatus] = useState(wsManager.status);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [createName, setCreateName] = useState("");
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const createInputRef = useRef(null);
 
   // Load the dashboard list and device list (for widget binding) once.
   useEffect(() => {
@@ -94,28 +100,44 @@ export default function DashboardPage() {
 
   // --- Dashboard actions -------------------------------------------------
   const handleCreate = useCallback(async () => {
-    const name = window.prompt("New dashboard name", "My dashboard");
-    if (!name) return;
+    setCreateName("");
+    setCreateOpen(true);
+  }, []);
+
+  const handleCreateConfirm = useCallback(async () => {
+    const name = createName.trim();
+    if (!name) {
+      toast.error("Dashboard name is required");
+      return;
+    }
+    // Prevent duplicate names
+    if (dashboards.some((d) => d.name.toLowerCase() === name.toLowerCase())) {
+      toast.error("A dashboard with this name already exists");
+      return;
+    }
     const action = await dispatch(createNewDashboard({ name }));
     if (createNewDashboard.fulfilled.match(action)) {
       setSelectedId(action.payload.id);
       setEditing(true);
+      setCreateOpen(false);
       toast.success("Dashboard created");
     } else {
       toast.error(action.payload?.message || "Failed to create dashboard");
     }
-  }, [dispatch]);
+  }, [dispatch, createName, dashboards]);
 
   const handleDelete = useCallback(async () => {
     if (!current) return;
-    const confirmed = window.confirm(
-      `Delete dashboard "${current.name}"? This will remove all its widgets and cannot be undone.`
-    );
-    if (!confirmed) return;
+    setDeleteOpen(true);
+  }, [current]);
+
+  const handleDeleteConfirm = useCallback(async () => {
+    if (!current) return;
     const action = await dispatch(removeDashboard(current.id));
     if (removeDashboard.fulfilled.match(action)) {
       setSelectedId(null);
       setEditing(false);
+      setDeleteOpen(false);
       toast.success("Dashboard deleted");
     } else {
       toast.error(action.payload?.message || "Failed to delete dashboard");
@@ -354,6 +376,42 @@ export default function DashboardPage() {
         onClose={() => setConfigWidget(null)}
         onSave={handleSaveConfig}
       />
+
+      {/* Create dashboard dialog */}
+      <Dialog
+        open={createOpen}
+        onClose={() => setCreateOpen(false)}
+        title="Create Dashboard"
+        description="Give your new dashboard a name."
+      >
+        <DialogBody>
+          <Input
+            ref={createInputRef}
+            placeholder="Dashboard name"
+            value={createName}
+            onChange={(e) => setCreateName(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && handleCreateConfirm()}
+            autoFocus
+          />
+        </DialogBody>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button>
+          <Button onClick={handleCreateConfirm}>Create</Button>
+        </DialogFooter>
+      </Dialog>
+
+      {/* Delete dashboard confirmation */}
+      <Dialog
+        open={deleteOpen}
+        onClose={() => setDeleteOpen(false)}
+        title="Delete Dashboard"
+        description={`Are you sure you want to delete "${current?.name}"? This will remove all widgets and cannot be undone.`}
+      >
+        <DialogFooter>
+          <Button variant="outline" onClick={() => setDeleteOpen(false)}>Cancel</Button>
+          <Button variant="destructive" onClick={handleDeleteConfirm}>Delete</Button>
+        </DialogFooter>
+      </Dialog>
     </section>
   );
 }
