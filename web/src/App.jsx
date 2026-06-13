@@ -8,7 +8,7 @@ export default function App() {
   return (
     <>
       <RouterProvider router={router} />
-      <Toaster position="top-right" richColors closeButton />
+      <Toaster position="bottom-left" richColors closeButton toastOptions={{ className: "text-xs" }} />
     </>
   );
 }
