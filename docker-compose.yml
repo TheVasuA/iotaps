@@ -116,6 +116,12 @@ services:
     image: eclipse-mosquitto:2
     container_name: iotaps-mosquitto
     restart: always
+    # Raise file-descriptor limits so the broker can hold 10k+ connections
+    # (each MQTT connection consumes one fd; default 1024 is far too low).
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
     ports:
       - "1883:1883"
       - "9001:9001"

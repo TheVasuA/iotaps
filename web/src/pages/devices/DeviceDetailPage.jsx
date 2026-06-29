@@ -19,6 +19,7 @@ import {
   CaretRight,
   CaretDown,
   Circle,
+  DownloadSimple,
 } from "@phosphor-icons/react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -45,6 +46,7 @@ import {
 } from "@/store/devicesSlice";
 import { selectLatest } from "@/store/dashboardsSlice";
 import { getDevice } from "@/lib/devicesApi";
+import { exportTelemetryCsv } from "@/lib/telemetryApi";
 import { extractApiError } from "@/lib/authApi";
 import QrDisplay from "@/components/devices/QrDisplay";
 import AssignUserDialog from "@/components/devices/AssignUserDialog";
@@ -343,10 +345,27 @@ export default function DeviceDetailPage() {
             <CardHeader className="pb-2">
               <div className="flex items-center justify-between">
                 <CardTitle className="text-sm">Live Telemetry</CardTitle>
-                <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
-                  {device.status === "online" ? <PlugsConnected size={12} className="text-emerald-500" /> : <Plugs size={12} />}
-                  {device.status === "online" ? "Receiving" : "Offline"}
-                </span>
+                <div className="flex items-center gap-3">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7 text-xs"
+                    onClick={async () => {
+                      try {
+                        await exportTelemetryCsv(device.id, { resolution: "raw" });
+                        toast.success("Telemetry exported");
+                      } catch {
+                        toast.error("Export failed");
+                      }
+                    }}
+                  >
+                    <DownloadSimple size={14} /> Export CSV
+                  </Button>
+                  <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
+                    {device.status === "online" ? <PlugsConnected size={12} className="text-emerald-500" /> : <Plugs size={12} />}
+                    {device.status === "online" ? "Receiving" : "Offline"}
+                  </span>
+                </div>
               </div>
             </CardHeader>
             <CardContent>

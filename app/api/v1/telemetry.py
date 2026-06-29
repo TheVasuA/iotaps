@@ -16,10 +16,13 @@ Downsampler (Req 6.6).
 
 from __future__ import annotations
 
+import csv
+import io
 import uuid
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, Query
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from app.core.security.deps import require_device_access, tenant_scope
@@ -100,3 +103,63 @@ async def get_latest_telemetry(
             error_code="telemetry_not_found",
         )
     return LatestTelemetryOut(ts=point.ts, data=point.data)
+
+
+@router.get("/{device_id}/telemetry/export")
+async def export_telemetry_csv(
+    device_id: uuid.UUID,
+    resolution: str = Query(default=RESOLUTION_RAW),
+    from_: datetime | None = Query(default=None, alias="from"),
+    to: datetime | None = Query(default=None),
+    limit: int = Query(default=MAX_LIMIT, ge=1, le=MAX_LIMIT),
+    scope: TenantScope = Depends(tenant_scope),
+    _: Principal = Depends(require_device_access()),
+) -> StreamingResponse:
+    """Export a device's telemetry as a downloadable CSV file.
+
+    Columns are: timestamp + one column per metric key discovered across the
+    result set. Tenant-scoped and device-access gated like the other telemetry
+    routes.
+    """
+    service = TelemetryService(scope)
+    points = await service.query(
+        device_id,
+        resolution=resolution,
+        start=from_,
+        end=to,
+        limit=limit,
+    )
+
+    # Collect all metric keys across all points (union) for stable columns.
+    metric_keys: list[str] = []
+    seen: set[str] = set()
+    for p in points:
+        for k in p.data.keys():
+            if k not in seen:
+                seen.add(k)
+                metric_keys.append(k)
+
+    def _generate():
+        buffer = io.StringIO()
+        writer = csv.writer(buffer)
+        # Header
+        writer.writerow(["timestamp", *metric_keys])
+        yield buffer.getvalue()
+        buffer.seek(0)
+        buffer.truncate(0)
+        # Rows
+        for p in points:
+            row = [p.ts.isoformat()]
+            for k in metric_keys:
+                row.append(p.data.get(k, ""))
+            writer.writerow(row)
+            yield buffer.getvalue()
+            buffer.seek(0)
+            buffer.truncate(0)
+
+    filename = f"telemetry_{device_id}_{resolution}.csv"
+    return StreamingResponse(
+        _generate(),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
