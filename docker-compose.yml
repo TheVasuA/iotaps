@@ -47,6 +47,9 @@ services:
       --worker-class uvicorn.workers.UvicornWorker
       --bind 0.0.0.0:8000
       --timeout 60
+      --max-requests 2000
+      --max-requests-jitter 200
+    mem_limit: 1g
     networks:
       - iotaps
 
@@ -78,6 +81,7 @@ services:
       --timeout 0
       --keep-alive 3600
       --graceful-timeout 30
+    mem_limit: 1g
     networks:
       - iotaps
 
@@ -100,6 +104,7 @@ services:
     # Runs all 8 background workers under supervisord; each worker is
     # independently restarted on unexpected termination (Req 30.1, 30.3).
     command: ["supervisord", "-c", "/etc/supervisor/supervisord.conf", "-n"]
+    mem_limit: 1g
     volumes:
       - ./infra/supervisor/supervisord.conf:/etc/supervisor/supervisord.conf:ro
     networks:
@@ -148,7 +153,12 @@ services:
     image: redis:7-alpine
     container_name: iotaps-redis
     restart: always
-    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD}"]
+    # maxmemory + LRU eviction prevents Redis from consuming all RAM and
+    # triggering the OOM killer (the root cause of the 4-day crash). With
+    # noeviction Redis would refuse writes when full; allkeys-lru evicts the
+    # least-recently-used keys instead so the platform keeps running.
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD}", "--maxmemory", "512mb", "--maxmemory-policy", "allkeys-lru"]
+    mem_limit: 768m
     ports:
       - "6379:6379"
     volumes:

@@ -18,7 +18,19 @@ from app.core.config import get_settings
 
 def _make_engine():
     return create_async_engine(
-        get_settings().database_url, pool_pre_ping=True, future=True
+        get_settings().database_url,
+        pool_pre_ping=True,
+        future=True,
+        # Connection pool tuning for stability under sustained load:
+        #   pool_size      — base connections kept open per process
+        #   max_overflow   — extra connections allowed during bursts
+        #   pool_recycle   — recycle connections after 30min to shed stale ones
+        #                    (prevents "server closed the connection" after days)
+        #   pool_timeout   — fail fast rather than hang if the pool is exhausted
+        pool_size=10,
+        max_overflow=20,
+        pool_recycle=1800,
+        pool_timeout=30,
     )
 
 

@@ -182,7 +182,15 @@ async def _load_record(redis: Any, command_id: str) -> Optional[CommandRecord]:
 
 
 async def _save_record(redis: Any, record: CommandRecord) -> None:
-    await redis.set(rk.command_record_key(record.command_id), json.dumps(record.to_dict()))
+    # TTL on command records prevents unbounded Redis growth. Terminal commands
+    # (CONFIRMED/UNACKNOWLEDGED) expire in 1h; in-flight (SENT/QUEUED) in 48h so
+    # a slow device reconnect can still flush queued commands.
+    ttl = 3600 if record.status in TERMINAL_STATUSES else 172800
+    await redis.set(
+        rk.command_record_key(record.command_id),
+        json.dumps(record.to_dict()),
+        ex=ttl,
+    )
 
 
 def _with_status(record: CommandRecord, status: CommandStatus) -> CommandRecord:
@@ -467,6 +475,10 @@ class CommandService:
                 ok = await self._redis.rpush(
                     rk.command_queue_key(str(device.id)), queued_payload
                 )
+                # Cap the offline queue (prevent unbounded growth for devices
+                # that never reconnect) and expire it after 7 days.
+                await self._redis.ltrim(rk.command_queue_key(str(device.id)), -100, -1)
+                await self._redis.expire(rk.command_queue_key(str(device.id)), 604800)
             except Exception as exc:  # pragma: no cover - defensive
                 raise CommandQueueError(
                     "Failed to queue command for offline device"
@@ -530,6 +542,8 @@ class CommandService:
         await self._redis.rpush(
             rk.command_schedule_key(str(device.id)), json.dumps(schedule)
         )
+        # Cap schedules per device to prevent unbounded growth.
+        await self._redis.ltrim(rk.command_schedule_key(str(device.id)), -50, -1)
         return schedule
 
     async def list_schedules(self, device_id: uuid.UUID) -> list[dict[str, Any]]:
