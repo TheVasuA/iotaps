@@ -21,16 +21,44 @@ Every route requires the Super_Admin role (Req 2.5).
 
 from __future__ import annotations
 
+import asyncio
+import os
+import tempfile
+from datetime import datetime
 from typing import Any
+from urllib.parse import unquote, urlparse
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.background import BackgroundTask
 
+from app.core.config import get_settings
 from app.core.security.deps import require_role
 from app.core.security.principal import ROLE_SUPER_ADMIN, Principal
 from app.db.session import get_session
 from app.services import admin_ops_service
+
+
+def _db_conn_params() -> dict[str, str]:
+    """Parse the SQLAlchemy ``database_url`` into libpq connection parameters.
+
+    Strips the async driver suffix (``+asyncpg``) and URL-decodes credentials so
+    they can be handed to ``pg_dump`` / ``pg_restore``. The password is returned
+    separately and passed via the ``PGPASSWORD`` env var (never on the command
+    line) to avoid leaking it in the process list.
+    """
+    raw = get_settings().database_url
+    raw = raw.replace("+asyncpg", "").replace("+psycopg2", "").replace("+psycopg", "")
+    parsed = urlparse(raw)
+    return {
+        "user": unquote(parsed.username or "iotaps"),
+        "password": unquote(parsed.password or ""),
+        "host": parsed.hostname or "postgres",
+        "port": str(parsed.port or 5432),
+        "dbname": (parsed.path or "/iotaps").lstrip("/") or "iotaps",
+    }
 
 router = APIRouter(prefix="/admin", tags=["admin", "ops"])
 
@@ -297,23 +325,165 @@ async def disconnect_ws(
 async def trigger_backup(
     _: Principal = Depends(require_role(ROLE_SUPER_ADMIN)),
 ) -> dict:
-    """Trigger a database backup (pg_dump)."""
-    import asyncio
-    import os
-    from datetime import datetime
+    """Create a database backup on the VPS disk (pg_dump, custom format).
 
+    Writes a compressed ``.dump`` to ``/srv/backups`` inside the container. For
+    a copy you can download to your own machine instead, use
+    ``GET /admin/platform/backup/download``.
+    """
+    params = _db_conn_params()
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    backup_path = f"/tmp/iotaps_backup_{timestamp}.sql"
+    backup_dir = "/srv/backups"
+    os.makedirs(backup_dir, exist_ok=True)
+    backup_path = os.path.join(backup_dir, f"iotaps_backup_{timestamp}.dump")
 
-    db_user = os.environ.get("POSTGRES_USER", "iotaps")
-    db_name = os.environ.get("POSTGRES_DB", "iotaps")
-    db_host = os.environ.get("POSTGRES_HOST", "postgres")
-
-    cmd = f"pg_dump -h {db_host} -U {db_user} {db_name} > {backup_path}"
-    proc = await asyncio.create_subprocess_shell(cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+    env = {**os.environ, "PGPASSWORD": params["password"]}
+    cmd = [
+        "pg_dump",
+        "-h", params["host"],
+        "-p", params["port"],
+        "-U", params["user"],
+        "-d", params["dbname"],
+        "-Fc",  # custom format -> restorable with pg_restore, compressed
+        "-f", backup_path,
+    ]
+    proc = await asyncio.create_subprocess_exec(
+        *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE, env=env
+    )
     _, stderr = await proc.communicate()
 
     if proc.returncode == 0:
         size = os.path.getsize(backup_path) if os.path.exists(backup_path) else 0
         return {"status": "ok", "path": backup_path, "size_bytes": size}
-    return {"status": "error", "message": stderr.decode()[:200]}
+    raise HTTPException(status_code=500, detail=stderr.decode()[:300] or "backup failed")
+
+
+@router.get("/platform/backup/download")
+async def download_backup(
+    _: Principal = Depends(require_role(ROLE_SUPER_ADMIN)),
+) -> FileResponse:
+    """Run pg_dump and stream the backup file to the admin's browser.
+
+    The dump is written to a temp file, streamed as an octet-stream download,
+    then deleted once the response has been sent (Req 29.6).
+    """
+    params = _db_conn_params()
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    fd, tmp_path = tempfile.mkstemp(prefix=f"iotaps_{timestamp}_", suffix=".dump")
+    os.close(fd)
+
+    env = {**os.environ, "PGPASSWORD": params["password"]}
+    cmd = [
+        "pg_dump",
+        "-h", params["host"],
+        "-p", params["port"],
+        "-U", params["user"],
+        "-d", params["dbname"],
+        "-Fc",
+        "-f", tmp_path,
+    ]
+    proc = await asyncio.create_subprocess_exec(
+        *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE, env=env
+    )
+    _, stderr = await proc.communicate()
+
+    if proc.returncode != 0 or not os.path.exists(tmp_path):
+        if os.path.exists(tmp_path):
+            os.unlink(tmp_path)
+        raise HTTPException(
+            status_code=500, detail=stderr.decode()[:300] or "backup failed"
+        )
+
+    filename = f"iotaps_backup_{timestamp}.dump"
+    return FileResponse(
+        tmp_path,
+        media_type="application/octet-stream",
+        filename=filename,
+        background=BackgroundTask(os.unlink, tmp_path),
+    )
+
+
+@router.post("/platform/restore")
+async def restore_backup(
+    file: UploadFile = File(...),
+    _: Principal = Depends(require_role(ROLE_SUPER_ADMIN)),
+) -> dict:
+    """Restore the database from an uploaded pg_dump (.dump) file.
+
+    DESTRUCTIVE: existing objects are dropped and recreated from the dump
+    (``pg_restore --clean --if-exists``). Intended for disaster recovery only;
+    the caller (admin UI) confirms with the operator before invoking this.
+    """
+    fd, tmp_path = tempfile.mkstemp(suffix=".dump")
+    try:
+        with os.fdopen(fd, "wb") as out:
+            while True:
+                chunk = await file.read(1024 * 1024)
+                if not chunk:
+                    break
+                out.write(chunk)
+
+        params = _db_conn_params()
+        env = {**os.environ, "PGPASSWORD": params["password"]}
+        cmd = [
+            "pg_restore",
+            "--clean",
+            "--if-exists",
+            "--no-owner",
+            "--no-privileges",
+            "-h", params["host"],
+            "-p", params["port"],
+            "-U", params["user"],
+            "-d", params["dbname"],
+            tmp_path,
+        ]
+        proc = await asyncio.create_subprocess_exec(
+            *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE, env=env
+        )
+        _, stderr = await proc.communicate()
+        warnings = stderr.decode()
+
+        if proc.returncode != 0:
+            # pg_restore exits non-zero on ignorable "does not exist, skipping"
+            # notices from --clean. Treat as success-with-warnings unless there
+            # are hard errors.
+            hard_errors = [
+                line
+                for line in warnings.splitlines()
+                if "error:" in line.lower() and "does not exist" not in line.lower()
+            ]
+            if hard_errors:
+                raise HTTPException(
+                    status_code=500,
+                    detail="; ".join(hard_errors)[:500] or "restore failed",
+                )
+        return {"status": "ok", "message": "Database restored", "warnings": warnings[:500]}
+    finally:
+        if os.path.exists(tmp_path):
+            os.unlink(tmp_path)
+
+
+# ---------------------------------------------------------------------------
+# Identity vault (MongoDB off-VPS mirror)
+# ---------------------------------------------------------------------------
+@router.get("/platform/vault/status")
+async def vault_status(
+    _: Principal = Depends(require_role(ROLE_SUPER_ADMIN)),
+) -> dict:
+    """Return MongoDB identity-vault connection status and document counts."""
+    from app.services import identity_vault
+
+    return await identity_vault.status()
+
+
+@router.post("/platform/vault/sync")
+async def vault_sync(
+    _: Principal = Depends(require_role(ROLE_SUPER_ADMIN)),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """Trigger an immediate full identity re-sync into the MongoDB vault."""
+    from app.services import identity_vault
+
+    if not get_settings().mongodb_enabled:
+        raise HTTPException(status_code=400, detail="MongoDB vault is not configured")
+    return await identity_vault.resync_all(session)

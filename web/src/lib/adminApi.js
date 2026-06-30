@@ -91,6 +91,19 @@ export async function deregisterMqttNode(nodeId) {
   await apiClient.delete(`/admin/mqtt-nodes/${nodeId}`);
 }
 
+/**
+ * Update an MQTT node's control state (Req 24.4): drain/enable via `status`
+ * ("active" | "disabled") and/or resize via `capacity`. Pass only the fields
+ * you want to change.
+ */
+export async function updateMqttNode(nodeId, { status, capacity } = {}) {
+  const body = {};
+  if (status !== undefined) body.status = status;
+  if (capacity !== undefined) body.capacity = capacity;
+  const { data } = await apiClient.patch(`/admin/mqtt-nodes/${nodeId}`, body);
+  return data; // MqttNodeOut
+}
+
 // ---------------------------------------------------------------------------
 // Revenue analytics (Req 25.1, 25.2)
 // ---------------------------------------------------------------------------
@@ -236,4 +249,19 @@ export async function getAdminDevices() {
 export async function getExpiringSubscriptions(days = 7) {
   const { data } = await apiClient.get("/admin/expiring-subscriptions", { params: { days } });
   return data;
+}
+
+// ---------------------------------------------------------------------------
+// Identity vault (MongoDB off-VPS mirror)
+// ---------------------------------------------------------------------------
+/** MongoDB identity-vault connection status + per-collection document counts. */
+export async function getVaultStatus() {
+  const { data } = await apiClient.get("/admin/platform/vault/status");
+  return data; // { enabled, connected, database?, counts? }
+}
+
+/** Trigger an immediate full identity re-sync into the MongoDB vault. */
+export async function syncVault() {
+  const { data } = await apiClient.post("/admin/platform/vault/sync");
+  return data; // { enabled, synced: { users, device_credentials, devices } }
 }

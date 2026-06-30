@@ -74,6 +74,38 @@ class Settings(BaseSettings):
     # TTL (seconds) for the read-through Redis cache of `platform_settings`.
     platform_settings_cache_ttl_seconds: int = 300
 
+    # ---- SMTP / email notifications ----
+    # When smtp_host is empty, email sending is disabled (calls become no-ops),
+    # so dev/test never attempt a live connection. Port 465 implies implicit
+    # SSL; any other port with smtp_use_tls uses STARTTLS.
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_username: str = ""
+    smtp_password: str = ""
+    smtp_from_email: str = "no-reply@iotaps.com"
+    smtp_use_tls: bool = True
+    # Display name shown in the From header and email branding.
+    smtp_from_name: str = "IoTAPS"
+
+    @property
+    def email_enabled(self) -> bool:
+        return bool(self.smtp_host.strip())
+
+    # ---- MongoDB identity vault (independent off-VPS mirror) ----
+    # A best-effort secondary mirror of critical identity data (users, device
+    # credentials, devices) to MongoDB Atlas (free 512MB tier is ample for
+    # identity-only data). Postgres remains the source of truth; this is an
+    # always-on, independently-hosted copy so a full VPS loss never takes the
+    # login/device identity data with it. Empty uri disables it (no-op).
+    mongodb_uri: str = ""
+    mongodb_db: str = "iotaps_vault"
+    # Seconds between full identity re-syncs by the vault worker.
+    mongodb_sync_interval_seconds: int = 900
+
+    @property
+    def mongodb_enabled(self) -> bool:
+        return bool(self.mongodb_uri.strip())
+
     @property
     def is_production(self) -> bool:
         return self.app_env.lower() in {"production", "prod"}

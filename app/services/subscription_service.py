@@ -485,6 +485,20 @@ async def _handle_capture(
     )
     subscription.status = SUB_STATUS_ACTIVE
 
+    # Best-effort confirmation email (never breaks webhook processing).
+    try:
+        from app.services import email_service
+
+        await email_service.notify_payment_succeeded(
+            session,
+            payment.org_id,
+            amount=payment.amount,
+            currency=payment.currency or "INR",
+            period_end=subscription.current_period_end,
+        )
+    except Exception:  # noqa: BLE001
+        logger.warning("payment_success_email_failed", exc_info=True)
+
 
 async def _handle_failure(
     session: AsyncSession,
@@ -507,3 +521,13 @@ async def _handle_failure(
             "Your previous plan remains unchanged. Please try again."
         ),
     )
+
+    # Best-effort failure email in addition to the in-app notification.
+    try:
+        from app.services import email_service
+
+        await email_service.notify_payment_failed(
+            session, payment.org_id, amount=payment.amount, currency=payment.currency or "INR"
+        )
+    except Exception:  # noqa: BLE001
+        logger.warning("payment_failed_email_failed", exc_info=True)

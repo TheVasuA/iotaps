@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { WifiHigh, WifiSlash } from "@phosphor-icons/react";
+import { WifiHigh, WifiSlash, HardDrives } from "@phosphor-icons/react";
 import { getAdminDevices } from "@/lib/adminApi";
 import { extractApiError } from "@/lib/authApi";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
@@ -81,6 +81,7 @@ export default function DevicesOverviewPanel() {
                 <tr className="border-b text-left text-muted-foreground">
                   <th className="px-2 py-2">Device</th>
                   <th className="px-2 py-2">Status</th>
+                  <th className="px-2 py-2">MQTT node</th>
                   <th className="px-2 py-2">Owner</th>
                   <th className="px-2 py-2 text-right">Subscription</th>
                 </tr>
@@ -101,6 +102,16 @@ export default function DevicesOverviewPanel() {
                           {d.status === "online" ? <WifiHigh size={12} className="mr-1" /> : <WifiSlash size={12} className="mr-1" />}
                           {d.status}
                         </Badge>
+                      </td>
+                      <td className="px-2 py-2">
+                        {d.node_label ? (
+                          <span className="inline-flex items-center gap-1 text-muted-foreground">
+                            <HardDrives size={12} />
+                            {d.node_label}
+                          </span>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">Unassigned</span>
+                        )}
                       </td>
                       <td className="px-2 py-2 text-muted-foreground">{d.owner_email || "—"}</td>
                       <td className="px-2 py-2 text-right">

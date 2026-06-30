@@ -3,19 +3,12 @@ import ReactECharts from "echarts-for-react";
 import { useAppSelector } from "@/store/hooks";
 import { selectLatest } from "@/store/dashboardsSlice";
 import { readMetric } from "@/lib/widgets";
+import { getChartTheme } from "@/lib/chartTheme";
 import { UnboundNotice } from "./ChartWidget";
 
 function getThemeColors() {
-  const root = document.documentElement;
-  const style = getComputedStyle(root);
-  const foreground = style.getPropertyValue("--foreground").trim();
-  const muted = style.getPropertyValue("--muted-foreground").trim();
-  const border = style.getPropertyValue("--border").trim();
-  return {
-    foreground: foreground ? `hsl(${foreground})` : "#1f2937",
-    muted: muted ? `hsl(${muted})` : "#9ca3af",
-    border: border ? `hsl(${border})` : "#e5e7eb",
-  };
+  const { foreground, muted, border } = getChartTheme();
+  return { foreground, muted, border };
 }
 
 const DEFAULT_ZONES = [

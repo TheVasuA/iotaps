@@ -87,6 +87,20 @@ async def _seed_superadmin(logger):
         logger.warning("superadmin_seed_failed", extra={"error": str(exc)})
 
 
+async def _seed_templates(logger):
+    """Seed the default global template catalog (idempotent, best-effort)."""
+    from app.db.session import async_session_factory
+    from app.services.default_templates import seed_default_templates
+
+    try:
+        async with async_session_factory() as session:
+            created = await seed_default_templates(session)
+        if created:
+            logger.info("default_templates_seeded", extra={"created": created})
+    except Exception as exc:
+        logger.warning("default_templates_seed_failed", extra={"error": str(exc)})
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application startup/shutdown lifecycle."""
@@ -102,6 +116,9 @@ async def lifespan(app: FastAPI):
     # Auto-seed super admin from env vars (SUPERADMIN_EMAIL, SUPERADMIN_PASSWORD)
     # so fresh deployments don't require manual DB manipulation.
     await _seed_superadmin(logger)
+
+    # Seed the default project template catalog (idempotent).
+    await _seed_templates(logger)
 
     logger.info("application_startup", extra={"env": get_settings().app_env})
     yield

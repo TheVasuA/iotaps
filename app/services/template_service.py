@@ -172,15 +172,20 @@ class TemplateService:
         device.template_id = template.id
         await self._session.flush()
 
-        await self._apply_dashboard(template)
+        await self._apply_dashboard(template, device)
         await self._apply_rules(template)
 
         await self._session.commit()
         await self._session.refresh(device)
         return device
 
-    async def _apply_dashboard(self, template: Template) -> None:
-        """Create a Dashboard + widgets from the template's ``dashboard_def``."""
+    async def _apply_dashboard(self, template: Template, device: Device) -> None:
+        """Create a Dashboard + widgets from the template's ``dashboard_def``.
+
+        Each widget's ``config.deviceId`` is set to the target device so the
+        scaffolded dashboard binds to live telemetry immediately (template defs
+        omit it because they're device-agnostic).
+        """
         dashboard_def = template.dashboard_def
         if not isinstance(dashboard_def, dict):
             return
@@ -192,10 +197,12 @@ class TemplateService:
         for widget in dashboard_def.get("widgets") or []:
             if not isinstance(widget, dict) or "type" not in widget:
                 continue
+            config = dict(widget.get("config") or {})
+            config.setdefault("deviceId", str(device.id))
             await dashboard_service.add_widget(
                 dashboard.id,
                 type=widget["type"],
-                config=widget.get("config"),
+                config=config,
                 layout=widget.get("layout"),
             )
 

@@ -1,12 +1,13 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { toast } from "sonner";
-import { Lightning, Broom, ShieldWarning, Power } from "@phosphor-icons/react";
+import { Lightning, Broom, ShieldWarning, Power, DownloadSimple, UploadSimple } from "@phosphor-icons/react";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import apiClient from "@/lib/apiClient";
 
 export default function PlatformControlsPanel() {
   const [busy, setBusy] = useState(null);
+  const restoreInputRef = useRef(null);
 
   const action = async (name, fn) => {
     setBusy(name);
@@ -15,6 +16,58 @@ export default function PlatformControlsPanel() {
       toast.success(`${name} completed`);
     } catch (err) {
       toast.error(err?.response?.data?.message || `${name} failed`);
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  // Download a fresh pg_dump backup straight to the admin's machine.
+  const handleBackupDownload = async () => {
+    setBusy("backup");
+    try {
+      const res = await apiClient.get("/admin/platform/backup/download", {
+        responseType: "blob",
+        timeout: 0,
+      });
+      const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "");
+      const url = URL.createObjectURL(res.data);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `iotaps_backup_${stamp}.dump`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      toast.success("Backup downloaded");
+    } catch (err) {
+      toast.error(err?.response?.data?.message || "Backup failed");
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  // Restore from an uploaded .dump file (destructive - confirmed first).
+  const handleRestoreFile = async (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = ""; // allow re-selecting the same file later
+    if (!file) return;
+    const ok = window.confirm(
+      `Restore the database from "${file.name}"?\n\n` +
+        "This OVERWRITES all current data (users, devices, telemetry) and cannot be undone."
+    );
+    if (!ok) return;
+
+    setBusy("restore");
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      await apiClient.post("/admin/platform/restore", form, {
+        headers: { "Content-Type": "multipart/form-data" },
+        timeout: 0,
+      });
+      toast.success("Database restored");
+    } catch (err) {
+      toast.error(err?.response?.data?.message || "Restore failed");
     } finally {
       setBusy(null);
     }
@@ -83,19 +136,43 @@ export default function PlatformControlsPanel() {
             </Button>
           </div>
 
-          <div className="rounded-lg border p-4 space-y-2">
-            <h3 className="text-sm font-medium">Trigger DB Backup</h3>
+          <div className="rounded-lg border p-4 space-y-2 sm:col-span-2">
+            <h3 className="text-sm font-medium">Backup &amp; Restore Database</h3>
             <p className="text-xs text-muted-foreground">
-              Create a pg_dump snapshot of the database (stored on VPS disk).
+              Download a full pg_dump snapshot (users, devices, telemetry, billing) to your
+              machine, or restore the database from a previously downloaded
+              <code className="mx-1">.dump</code> file. Restore overwrites all current data.
             </p>
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={busy === "backup"}
-              onClick={() => action("backup", () => apiClient.post("/admin/platform/backup"))}
-            >
-              {busy === "backup" ? "Backing up..." : "Backup Now"}
-            </Button>
+            <div className="flex flex-wrap gap-2 pt-1">
+              <Button
+                size="sm"
+                variant="outline"
+                className="text-emerald-600 border-emerald-300 hover:bg-emerald-50"
+                disabled={busy === "backup"}
+                onClick={handleBackupDownload}
+              >
+                <DownloadSimple size={14} className="mr-1" />
+                {busy === "backup" ? "Backing up..." : "Backup & Download"}
+              </Button>
+
+              <Button
+                size="sm"
+                variant="outline"
+                className="text-red-600 border-red-300 hover:bg-red-50"
+                disabled={busy === "restore"}
+                onClick={() => restoreInputRef.current?.click()}
+              >
+                <UploadSimple size={14} className="mr-1" />
+                {busy === "restore" ? "Restoring..." : "Restore from File"}
+              </Button>
+              <input
+                ref={restoreInputRef}
+                type="file"
+                accept=".dump,.sql"
+                className="hidden"
+                onChange={handleRestoreFile}
+              />
+            </div>
           </div>
         </CardContent>
       </Card>

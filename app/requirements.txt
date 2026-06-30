@@ -27,6 +27,9 @@ email-validator==2.2.0
 # --- Device provisioning (Req 5.2: QR code generation) ---
 qrcode[pil]==8.0
 
+# --- MongoDB identity vault (off-VPS mirror of critical identity data) ---
+pymongo[srv]==4.10.1
+
 # --- Test dependencies ---
 httpx==0.28.1
 pytest==8.3.4

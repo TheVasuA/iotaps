@@ -221,3 +221,103 @@ def test_list_nodes_exposes_metrics(client, session_factory):
     assert entry["disk_pct"] == 12.25
     assert entry["active_connections"] == 42
     assert entry["capacity"] == 1000
+
+
+# ---------------------------------------------------------------------------
+# Update / drain / resize (Req 24.4)
+# ---------------------------------------------------------------------------
+def test_update_drains_node(client, session_factory):
+    import asyncio
+
+    node = asyncio.get_event_loop().run_until_complete(_seed_node(session_factory))
+    resp = client.patch(
+        _url(f"/admin/mqtt-nodes/{node.id}"),
+        json={"status": "disabled"},
+        headers=_auth(),
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["status"] == "disabled"
+
+
+def test_update_reenables_node(client, session_factory):
+    import asyncio
+
+    node = asyncio.get_event_loop().run_until_complete(
+        _seed_node(session_factory, status="disabled")
+    )
+    resp = client.patch(
+        _url(f"/admin/mqtt-nodes/{node.id}"),
+        json={"status": "active"},
+        headers=_auth(),
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["status"] == "active"
+
+
+def test_update_resizes_capacity(client, session_factory):
+    import asyncio
+
+    node = asyncio.get_event_loop().run_until_complete(_seed_node(session_factory))
+    resp = client.patch(
+        _url(f"/admin/mqtt-nodes/{node.id}"),
+        json={"capacity": 5000},
+        headers=_auth(),
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["capacity"] == 5000
+
+
+def test_update_rejects_capacity_below_active(client, session_factory):
+    import asyncio
+
+    # seeded node has active_connections=42
+    node = asyncio.get_event_loop().run_until_complete(_seed_node(session_factory))
+    resp = client.patch(
+        _url(f"/admin/mqtt-nodes/{node.id}"),
+        json={"capacity": 10},
+        headers=_auth(),
+    )
+    assert resp.status_code == 422, resp.text
+
+
+def test_update_rejects_unknown_status(client, session_factory):
+    import asyncio
+
+    node = asyncio.get_event_loop().run_until_complete(_seed_node(session_factory))
+    resp = client.patch(
+        _url(f"/admin/mqtt-nodes/{node.id}"),
+        json={"status": "paused"},
+        headers=_auth(),
+    )
+    assert resp.status_code == 422, resp.text
+
+
+def test_update_requires_a_field(client, session_factory):
+    import asyncio
+
+    node = asyncio.get_event_loop().run_until_complete(_seed_node(session_factory))
+    resp = client.patch(
+        _url(f"/admin/mqtt-nodes/{node.id}"), json={}, headers=_auth()
+    )
+    assert resp.status_code == 422, resp.text
+
+
+def test_update_unknown_node_404(client):
+    resp = client.patch(
+        _url(f"/admin/mqtt-nodes/{uuid.uuid4()}"),
+        json={"status": "disabled"},
+        headers=_auth(),
+    )
+    assert resp.status_code == 404
+
+
+def test_update_forbidden_for_non_admin(client, session_factory):
+    import asyncio
+
+    node = asyncio.get_event_loop().run_until_complete(_seed_node(session_factory))
+    resp = client.patch(
+        _url(f"/admin/mqtt-nodes/{node.id}"),
+        json={"status": "disabled"},
+        headers=_auth(role=ROLE_PROJECT_CENTER),
+    )
+    assert resp.status_code == 403

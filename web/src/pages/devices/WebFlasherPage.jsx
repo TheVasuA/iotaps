@@ -9,6 +9,9 @@ import {
   Warning,
   CircleNotch,
   Trash,
+  Copy,
+  DownloadSimple,
+  Cpu,
 } from "@phosphor-icons/react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -33,6 +36,12 @@ import {
   parseFlashAddress,
   classifyFlashError,
 } from "@/lib/webFlasher";
+import { listDevices } from "@/lib/devicesApi";
+import {
+  buildBlinkSketch,
+  DEFAULT_MQTT_HOST,
+  DEFAULT_MQTT_PORT,
+} from "@/lib/sampleFirmware";
 
 // Web Flasher + serial monitor (Task 11.2, Req 12.1-12.3).
 //
@@ -60,6 +69,72 @@ export default function WebFlasherPage() {
   const flasherRef = useRef(null);
   const lineBufferRef = useRef(new SerialLineBuffer());
   const monitorEndRef = useRef(null);
+
+  // --- Sample firmware code (Blink LED with the device's generated token) ---
+  const [devices, setDevices] = useState([]);
+  const [selectedDeviceId, setSelectedDeviceId] = useState("");
+  const [ssid, setSsid] = useState("");
+  const [wifiPassword, setWifiPassword] = useState("");
+  const [brokerHost, setBrokerHost] = useState(DEFAULT_MQTT_HOST);
+
+  // Load the caller's devices so we can offer their generated tokens.
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        const list = await listDevices();
+        if (!active) return;
+        setDevices(list);
+        if (list.length > 0) setSelectedDeviceId(list[0].id);
+      } catch {
+        // Non-fatal: the sample-code section just falls back to a placeholder
+        // token. The flasher itself doesn't need the device list.
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const selectedDevice = useMemo(
+    () => devices.find((d) => d.id === selectedDeviceId) || null,
+    [devices, selectedDeviceId]
+  );
+
+  const sampleCode = useMemo(
+    () =>
+      buildBlinkSketch({
+        token: selectedDevice?.device_token,
+        label: selectedDevice?.label,
+        host: brokerHost.trim() || DEFAULT_MQTT_HOST,
+        port: DEFAULT_MQTT_PORT,
+        ssid: ssid.trim() || undefined,
+        password: wifiPassword.trim() || undefined,
+      }),
+    [selectedDevice, brokerHost, ssid, wifiPassword]
+  );
+
+  const onCopyCode = useCallback(async () => {
+    try {
+      await navigator.clipboard.writeText(sampleCode);
+      toast.success("Sample code copied to clipboard");
+    } catch {
+      toast.error("Could not copy to clipboard");
+    }
+  }, [sampleCode]);
+
+  const onDownloadCode = useCallback(() => {
+    const safe = (selectedDevice?.label || "iotaps_device")
+      .replace(/[^a-z0-9_-]+/gi, "_")
+      .toLowerCase();
+    const blob = new Blob([sampleCode], { type: "text/plain" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${safe}_blink.ino`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }, [sampleCode, selectedDevice]);
 
   const connected =
     phase === FLASH_PHASE.CONNECTED ||
@@ -294,6 +369,101 @@ export default function WebFlasherPage() {
           <span>{error}</span>
         </div>
       ) : null}
+
+      {/* Sample firmware: Blink LED with the device's generated token */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-xl">
+            <Cpu size={20} className="text-primary" />
+            Sample firmware (Blink LED)
+          </CardTitle>
+          <CardDescription>
+            Pick one of your devices to generate a ready-to-compile Arduino
+            sketch with its unique token baked in. Compile it in the Arduino IDE,
+            export the .bin, then flash it below.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-1.5">
+              <Label htmlFor="sample-device">Device</Label>
+              {devices.length > 0 ? (
+                <select
+                  id="sample-device"
+                  value={selectedDeviceId}
+                  onChange={(e) => setSelectedDeviceId(e.target.value)}
+                  className="h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                >
+                  {devices.map((d) => (
+                    <option key={d.id} value={d.id}>
+                      {d.label || d.device_uid || d.id}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  No devices yet — provision one from the Devices page to get a
+                  token. The sample below uses a placeholder until then.
+                </p>
+              )}
+              {selectedDevice ? (
+                <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                  Token:
+                  <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-foreground">
+                    {selectedDevice.device_token || "no active credential"}
+                  </code>
+                </p>
+              ) : null}
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="broker-host">MQTT broker host</Label>
+              <Input
+                id="broker-host"
+                value={brokerHost}
+                onChange={(e) => setBrokerHost(e.target.value)}
+                placeholder={DEFAULT_MQTT_HOST}
+              />
+              <p className="text-xs text-muted-foreground">
+                Port {DEFAULT_MQTT_PORT} (MQTT). Override the host only if you
+                run a private broker.
+              </p>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="wifi-ssid">Wi-Fi SSID</Label>
+              <Input
+                id="wifi-ssid"
+                value={ssid}
+                onChange={(e) => setSsid(e.target.value)}
+                placeholder="YOUR_WIFI_SSID"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="wifi-pass">Wi-Fi password</Label>
+              <Input
+                id="wifi-pass"
+                value={wifiPassword}
+                onChange={(e) => setWifiPassword(e.target.value)}
+                placeholder="YOUR_WIFI_PASSWORD"
+              />
+            </div>
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" size="sm" onClick={onCopyCode}>
+              <Copy size={16} />
+              Copy code
+            </Button>
+            <Button variant="outline" size="sm" onClick={onDownloadCode}>
+              <DownloadSimple size={16} />
+              Download .ino
+            </Button>
+          </div>
+
+          <pre className="max-h-80 overflow-auto rounded-lg border border-border bg-zinc-950 p-3 font-mono text-xs leading-relaxed text-zinc-100">
+            <code>{sampleCode}</code>
+          </pre>
+        </CardContent>
+      </Card>
 
       {/* Flashing card (Req 12.1) */}
       <Card>

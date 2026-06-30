@@ -1,0 +1,4 @@
+# Force LF for shell scripts so they run on the Linux VPS even when edited on
+# Windows. CRLF in a script breaks the `#!/usr/bin/env bash` shebang.
+*.sh text eol=lf
+infra/scripts/* text eol=lf

@@ -323,6 +323,8 @@ class AdminDeviceOut(BaseModel):
     org_id: str
     subscription_days_remaining: int | None = None
     last_telemetry_at: str | None = None
+    node_id: str | None = None
+    node_label: str | None = None
 
 
 @router.get("/devices", response_model=list[AdminDeviceOut])
@@ -330,18 +332,22 @@ async def list_all_devices(
     session: AsyncSession = Depends(get_session),
     _: Principal = Depends(require_role(ROLE_SUPER_ADMIN)),
 ) -> list[AdminDeviceOut]:
-    """List all platform devices with owner info and subscription status."""
+    """List all platform devices with owner, subscription, and MQTT node info."""
     from sqlalchemy import select, func
     from app.models.billing import Subscription
+    from app.models.infra import MqttNode
     from datetime import datetime, timezone
 
     result = await session.execute(
-        select(Device, User.email).outerjoin(User, User.org_id == Device.org_id).order_by(Device.created_at.desc())
+        select(Device, User.email, MqttNode)
+        .outerjoin(User, User.org_id == Device.org_id)
+        .outerjoin(MqttNode, MqttNode.id == Device.node_id)
+        .order_by(Device.created_at.desc())
     )
     rows = result.all()
 
     output = []
-    for device, owner_email in rows:
+    for device, owner_email, node in rows:
         # Check subscription
         sub_result = await session.execute(
             select(Subscription).where(
@@ -363,6 +369,8 @@ async def list_all_devices(
             owner_email=owner_email,
             org_id=str(device.org_id),
             subscription_days_remaining=days_remaining,
+            node_id=str(node.id) if node is not None else None,
+            node_label=f"{node.ip}:{node.port}" if node is not None else None,
         ))
     return output
 

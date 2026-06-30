@@ -3,8 +3,10 @@ import ReactECharts from "echarts-for-react";
 import { useAppSelector } from "@/store/hooks";
 import { selectSeries } from "@/store/dashboardsSlice";
 import { downsampleSeries } from "@/lib/widgets";
+import { getChartTheme } from "@/lib/chartTheme";
 
-// Professional line/bar chart — minimal grid padding, gradient fill, smooth line.
+// Professional line/bar chart — minimal grid padding, gradient fill, smooth
+// line, and fully theme-aware colours (role theme + light/dark mode).
 export default function ChartWidget({ widget }) {
   const config = widget.config || {};
   const deviceId = config.deviceId;
@@ -14,6 +16,7 @@ export default function ChartWidget({ widget }) {
   const series = useAppSelector(selectSeries(deviceId, metric));
 
   const option = useMemo(() => {
+    const theme = getChartTheme();
     const points = downsampleSeries(series, maxPoints);
     const data = points.map((p) => [p.ts, p.value]);
     const isBar = widget.type === "bar";
@@ -22,16 +25,16 @@ export default function ChartWidget({ widget }) {
       grid: { top: 8, right: 8, bottom: 20, left: 32 },
       tooltip: {
         trigger: "axis",
-        backgroundColor: "rgba(255,255,255,0.95)",
-        borderColor: "#e5e7eb",
-        textStyle: { fontSize: 11, color: "#374151" },
+        backgroundColor: theme.card,
+        borderColor: theme.border,
+        textStyle: { fontSize: 11, color: theme.foreground },
       },
       xAxis: {
         type: "time",
         boundaryGap: isBar,
         axisLine: { show: false },
         axisTick: { show: false },
-        axisLabel: { fontSize: 9, color: "#9ca3af" },
+        axisLabel: { fontSize: 9, color: theme.muted },
         splitLine: { show: false },
       },
       yAxis: {
@@ -39,8 +42,8 @@ export default function ChartWidget({ widget }) {
         scale: true,
         axisLine: { show: false },
         axisTick: { show: false },
-        axisLabel: { fontSize: 9, color: "#9ca3af" },
-        splitLine: { lineStyle: { color: "#f3f4f6", type: "dashed" } },
+        axisLabel: { fontSize: 9, color: theme.muted },
+        splitLine: { lineStyle: { color: theme.grid, type: "dashed" } },
       },
       series: [
         {
@@ -52,8 +55,8 @@ export default function ChartWidget({ widget }) {
           largeThreshold: 200,
           sampling: "lttb",
           data,
-          lineStyle: { width: 2, color: "#3b82f6" },
-          itemStyle: { color: "#3b82f6" },
+          itemStyle: { color: theme.primary, borderRadius: isBar ? [3, 3, 0, 0] : 0 },
+          lineStyle: { width: 2, color: theme.primary },
           areaStyle: isBar
             ? undefined
             : {
@@ -61,8 +64,8 @@ export default function ChartWidget({ widget }) {
                   type: "linear",
                   x: 0, y: 0, x2: 0, y2: 1,
                   colorStops: [
-                    { offset: 0, color: "rgba(59,130,246,0.25)" },
-                    { offset: 1, color: "rgba(59,130,246,0.02)" },
+                    { offset: 0, color: theme.areaTop },
+                    { offset: 1, color: theme.areaBottom },
                   ],
                 },
               },
@@ -73,6 +76,14 @@ export default function ChartWidget({ widget }) {
 
   if (!deviceId || !metric) {
     return <UnboundNotice />;
+  }
+
+  if (series.length === 0) {
+    return (
+      <div className="flex h-full items-center justify-center text-center text-[11px] text-muted-foreground">
+        Waiting for data…
+      </div>
+    );
   }
 
   return (

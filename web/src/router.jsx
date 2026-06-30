@@ -136,6 +136,8 @@ export const router = createBrowserRouter([
           { path: "devices-overview", element: L(() => import("@/pages/admin/DevicesOverviewPanel")) },
           { path: "expiring", element: L(() => import("@/pages/admin/ExpiringPanel")) },
           { path: "controls", element: L(() => import("@/pages/admin/PlatformControlsPanel")) },
+          { path: "recovery", element: L(() => import("@/pages/admin/DisasterRecoveryPanel")) },
+          { path: "commands", element: L(() => import("@/pages/admin/CommandsReferencePanel")) },
         ],
       },
     ],

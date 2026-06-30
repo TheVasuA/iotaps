@@ -219,6 +219,26 @@ class DeviceService:
         await self._session.commit()
         await self._session.refresh(device)
         await self._session.refresh(credential)
+
+        # Best-effort registration email (never blocks/breaks provisioning).
+        try:
+            from app.services import email_service
+
+            await email_service.notify_device_registered(
+                self._session, self._org_uuid, device
+            )
+        except Exception:  # noqa: BLE001
+            pass
+
+        # Best-effort mirror of the device + credential identity to the vault.
+        try:
+            from app.services import identity_vault
+
+            await identity_vault.mirror_device(device)
+            await identity_vault.mirror_credential(credential)
+        except Exception:  # noqa: BLE001
+            pass
+
         return device, credential, plaintext_secret
 
     # ------------------------------------------------------------------
@@ -308,12 +328,18 @@ class DeviceService:
         """
         device = await self._scope.get(Device, device_id)
 
+        # Capture identity for the deletion email before the row is removed.
+        _label = device.label
+        _device_uid = device.device_uid
+
         # Revoke all credentials for this device (Req 5.9).
         creds = await self._session.execute(
             select(MqttCredential).where(MqttCredential.device_id == device.id)
         )
+        _cred_ids: list[str] = []
         for cred in creds.scalars():
             cred.revoked = True
+            _cred_ids.append(str(cred.id))
 
         self._log(
             ACTION_DELETE,
@@ -326,6 +352,25 @@ class DeviceService:
 
         await self._session.delete(device)
         await self._session.commit()
+
+        # Best-effort deletion email (never blocks/breaks deletion).
+        try:
+            from app.services import email_service
+
+            await email_service.notify_device_deleted(
+                self._session, self._org_uuid, label=_label, device_uid=_device_uid
+            )
+        except Exception:  # noqa: BLE001
+            pass
+
+        # Best-effort removal from the identity vault mirror.
+        try:
+            from app.services import identity_vault
+
+            await identity_vault.remove_device(str(device_id))
+            await identity_vault.remove_credentials_for_device(_cred_ids)
+        except Exception:  # noqa: BLE001
+            pass
 
     # ------------------------------------------------------------------
     # Groups (Req 5.5)

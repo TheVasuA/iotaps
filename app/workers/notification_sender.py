@@ -428,6 +428,13 @@ async def run(
             )
 
 
+async def _email_sender(email: str, subject: str, body: str) -> None:
+    """Module-level EmailSender adapter for the SMTP service (lazy import)."""
+    from app.services import email_service
+
+    await email_service.alert_email_sender(email, subject, body)
+
+
 def main() -> None:  # pragma: no cover - process entry point wires live infra
     """Process entry point (``python -m app.workers.notification_sender``).
 
@@ -470,7 +477,7 @@ def main() -> None:  # pragma: no cover - process entry point wires live infra
 
         clients = DeliveryClients(
             telegram=None,  # wired to the Telegram Bot API client when configured
-            email=None,  # wired to the SMTP/email client when configured
+            email=_email_sender,  # SMTP email via app.services.email_service
             push=FirebasePushClient(),  # Req 20.5
         )
         persister = SqlAlchemyInAppPersister(async_session_factory)
@@ -510,10 +517,13 @@ async def _load_recipients(  # pragma: no cover - exercised against a live DB
             await session.execute(select(User).where(User.org_id == org_uuid))
         ).scalars().all()
         for user in users:
+            channels = [Channel.IN_APP]
+            if user.email:
+                channels.append(Channel.EMAIL)
             recipients.append(
                 Recipient.build(
                     str(user.id),
-                    [Channel.IN_APP],
+                    channels,
                     email=user.email,
                 )
             )

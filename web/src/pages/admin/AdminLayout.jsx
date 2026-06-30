@@ -1,4 +1,5 @@
 import { NavLink, Outlet } from "react-router-dom";
+import { useState } from "react";
 import {
   ChartPie,
   Buildings,
@@ -13,8 +14,13 @@ import {
   DeviceMobile,
   Timer,
   Wrench,
+  Lifebuoy,
+  Terminal,
+  Question,
 } from "@phosphor-icons/react";
 import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
+import CrashHelpDialog from "@/pages/admin/CrashHelpDialog";
 
 // Super_Admin admin platform shell (Task 20.7, Req 23-29). Renders the purple
 // Super_Admin theme (data-theme="admin" is applied at login via the auth slice,
@@ -34,18 +40,33 @@ const panels = [
   { to: "/admin/devices-overview", label: "All Devices", icon: DeviceMobile },
   { to: "/admin/expiring", label: "Expiring", icon: Timer },
   { to: "/admin/controls", label: "Controls", icon: Wrench },
+  { to: "/admin/recovery", label: "Disaster Recovery", icon: Lifebuoy },
+  { to: "/admin/commands", label: "Command Reference", icon: Terminal },
 ];
 
 export default function AdminLayout() {
+  const [helpOpen, setHelpOpen] = useState(false);
   return (
     <div className="mx-auto max-w-7xl">
-      <header className="mb-6">
-        <h1 className="text-2xl font-semibold text-primary">Admin platform</h1>
-        <p className="text-sm text-muted-foreground">
-          Super_Admin control panel for companies, infrastructure, revenue, and
-          platform operations.
-        </p>
+      <header className="mb-6 flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-semibold text-primary">Admin platform</h1>
+          <p className="text-sm text-muted-foreground">
+            Super_Admin control panel for companies, infrastructure, revenue, and
+            platform operations.
+          </p>
+        </div>
+        <Button
+          variant="outline"
+          size="sm"
+          className="shrink-0"
+          onClick={() => setHelpOpen(true)}
+        >
+          <Question size={16} className="mr-1" />
+          Help: Server crashed?
+        </Button>
       </header>
+      <CrashHelpDialog open={helpOpen} onClose={() => setHelpOpen(false)} />
       <div className="grid gap-6 lg:grid-cols-[220px_1fr]">
         <nav className="flex flex-row flex-wrap gap-1 lg:flex-col">
           {panels.map(({ to, end, label, icon: Icon }) => (
