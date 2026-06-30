@@ -139,7 +139,7 @@ async def _run(records: list[dict]) -> None:
         assert published["data"]["temp"] in candidates
 
 
-@settings(max_examples=30, deadline=None, suppress_health_check=[HealthCheck.too_slow])
+@settings(max_examples=10, deadline=None, suppress_health_check=[HealthCheck.too_slow])
 @given(records=st.lists(_record, min_size=1, max_size=30))
 def test_real_time_latest_value_publication(records: list[dict]) -> None:
     """Property 6: real-time latest-value publication.

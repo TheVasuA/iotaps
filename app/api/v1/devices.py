@@ -216,6 +216,17 @@ async def create_device(
     )
 
 
+@router.get("/groups", response_model=list[GroupOut])
+async def list_groups(
+    scope: TenantScope = Depends(tenant_scope),
+    _: Principal = Depends(require_role(*_MANAGE_ROLES)),
+) -> list[GroupOut]:
+    """List device groups in the caller's organization (Req 5.5)."""
+    service = DeviceService(scope)
+    groups = await service.list_groups()
+    return [_group_out(g) for g in groups]
+
+
 @router.post("/groups", response_model=GroupResponse, status_code=201)
 async def create_group(
     payload: CreateGroupRequest,

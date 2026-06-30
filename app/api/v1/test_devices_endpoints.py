@@ -137,8 +137,11 @@ def test_provision_device_returns_credentials_and_qr(client, seeded):
     body = resp.json()
     assert body["device"]["label"] == "Pump"
     assert body["device"]["node_id"]  # assigned a node
-    assert body["mqtt_credentials"]["username"]
-    assert body["mqtt_credentials"]["secret"]  # plaintext returned once
+    # Device-token credential model: a single token serves as both the MQTT
+    # username and password, returned once on provisioning (Req 5.1).
+    assert body["mqtt_credentials"]["device_token"]
+    assert body["mqtt_credentials"]["revoked"] is False
+    assert body["device"]["device_token"] == body["mqtt_credentials"]["device_token"]
     assert body["mqtt_credentials"]["acl_pattern"] == f"iotaps/{seeded['org_id']}/#"
     assert seeded["org_id"] in body["qr"]
 

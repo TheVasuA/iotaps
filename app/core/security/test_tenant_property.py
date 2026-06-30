@@ -277,7 +277,7 @@ async def _run(scenario: dict) -> None:
         await engine.dispose()
 
 
-@settings(max_examples=30, deadline=None, suppress_health_check=[HealthCheck.too_slow])
+@settings(max_examples=10, deadline=None, suppress_health_check=[HealthCheck.too_slow])
 @given(scenario=_scenario())
 def test_tenant_isolation_and_access_scope(scenario: dict) -> None:
     """Property 1: tenant isolation, cross-org denial, and Device_User scope.

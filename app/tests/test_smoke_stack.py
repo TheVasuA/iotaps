@@ -5,8 +5,10 @@ core boot-time invariants hold:
 
   - the FastAPI health endpoint responds (Req 28.1);
   - the Docker Compose stack declares every required service with self-heal
-    `restart: always`, and the Nginx config terminates SSL while routing the
-    SPA, REST API, and WebSocket gateway (Req 32.3);
+    `restart: always` (Req 32.3);
+  - the Nginx reverse proxy routes the SPA, REST API, and WebSocket gateway,
+    with SSL terminated at the Cloudflare edge in front of it and the real
+    client IP restored from `CF-Connecting-IP` (Req 32.3 / 32.4);
   - dynamic platform settings load through the read-through loader (Req 29.4 /
     boot dependency for 28.1);
   - per-org MQTT ACLs permit same-org topics and deny cross-org publish/
@@ -17,7 +19,7 @@ settings loader, ACL matching) always run. Checks that need live infrastructure
 (a running Docker Compose stack, a reachable Mosquitto broker) skip gracefully
 when that infrastructure is unavailable, so the suite is green in CI/dev.
 
-Run with: DATABASE_URL=sqlite+aiosqlite:///:memory: python -m pytest
+Run with: python -m pytest app/tests/test_smoke_stack.py
 """
 
 from __future__ import annotations
@@ -40,6 +42,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 COMPOSE_FILE = REPO_ROOT / "docker-compose.yml"
 NGINX_CONF = REPO_ROOT / "infra" / "nginx" / "nginx.conf"
 NGINX_SITE_CONF = REPO_ROOT / "infra" / "nginx" / "conf.d" / "iotaps.conf"
+NGINX_REALIP_CONF = REPO_ROOT / "infra" / "nginx" / "conf.d" / "cloudflare-realip.conf"
 MOSQUITTO_CONF = REPO_ROOT / "infra" / "mosquitto" / "mosquitto.conf"
 
 # Services the Compose stack must declare (Req 32.3, 30.1).
@@ -109,13 +112,28 @@ def test_compose_mounts_nginx_and_mosquitto_config() -> None:
 def test_nginx_config_files_exist() -> None:
     assert NGINX_CONF.is_file(), f"missing {NGINX_CONF}"
     assert NGINX_SITE_CONF.is_file(), f"missing {NGINX_SITE_CONF}"
+    assert NGINX_REALIP_CONF.is_file(), f"missing {NGINX_REALIP_CONF}"
 
 
-def test_nginx_terminates_ssl() -> None:
+def test_nginx_ssl_terminated_at_cloudflare_edge() -> None:
+    """SSL is terminated at the Cloudflare edge in front of Nginx (Req 32.3/32.4).
+
+    The platform fronts Nginx with Cloudflare (orange-cloud proxied), so TLS is
+    terminated at Cloudflare and Nginx receives proxied HTTP. For per-IP login
+    blocking (Req 29.3) and correct https awareness to keep working, Nginx must
+    restore the original visitor IP from Cloudflare's ``CF-Connecting-IP`` header
+    and forward the original scheme upstream.
+    """
+    realip = NGINX_REALIP_CONF.read_text(encoding="utf-8")
+    # Real client IP restored from the Cloudflare edge (which did SSL).
+    assert "real_ip_header CF-Connecting-IP" in realip
+    assert "set_real_ip_from" in realip
+
     conf = NGINX_SITE_CONF.read_text(encoding="utf-8")
-    assert "listen 443 ssl" in conf
-    assert "ssl_certificate" in conf
-    assert "ssl_certificate_key" in conf
+    # The original (https) scheme is forwarded so the app sees the real scheme.
+    assert "X-Forwarded-Proto $scheme" in conf
+    # Dedicated API vhost that Cloudflare proxies to (api.iotaps.com).
+    assert "server_name api.iotaps.com" in conf
 
 
 def test_nginx_routes_spa_rest_and_websocket() -> None:
@@ -137,9 +155,10 @@ def test_nginx_routes_spa_rest_and_websocket() -> None:
     assert "try_files $uri $uri/ /index.html" in conf
 
 
-def test_nginx_redirects_http_to_https() -> None:
+def test_nginx_health_check_location_present() -> None:
+    """Nginx exposes a lightweight health-check location for upstream probes."""
     conf = NGINX_SITE_CONF.read_text(encoding="utf-8")
-    assert "return 301 https://$host$request_uri" in conf
+    assert "location = /healthz" in conf
 
 
 # --------------------------------------------------------------------------- #
@@ -202,13 +221,45 @@ def test_mqtt_acl_org_id_prefix_not_substring_matched() -> None:
     assert not mt.org_can_access("org", mt.telemetry_topic("org2", "d"))
 
 
-def test_mosquitto_uses_per_org_http_auth_backend() -> None:
-    """The broker config wires the per-org auth backend against FastAPI."""
+def test_per_org_acl_pattern_enforces_isolation() -> None:
+    """A stored credential ACL pattern authorizes only its own org (Req 3.5).
+
+    This mirrors the broker authorization decision: a credential is provisioned
+    with ``acl_pattern = iotaps/{org_id}/#`` and every publish/subscribe is
+    checked against that exact filter. A credential scoped to org-alpha must be
+    allowed on alpha topics and denied on org-beta topics.
+    """
+    alpha_acl = mt.org_acl_pattern("org-alpha")
+    assert alpha_acl == "iotaps/org-alpha/#"
+
+    # Same-org publish + subscribe authorized against the stored pattern.
+    for topic in (
+        mt.telemetry_topic("org-alpha", "dev-1"),
+        mt.command_topic("org-alpha", "dev-1"),
+    ):
+        assert mt.topic_matches_filter(alpha_acl, topic)
+
+    # Cross-org publish + subscribe denied against the stored pattern.
+    for topic in (
+        mt.telemetry_topic("org-beta", "dev-1"),
+        mt.command_topic("org-beta", "dev-1"),
+        "iotaps/org-beta/#",
+    ):
+        assert not mt.topic_matches_filter(alpha_acl, topic)
+
+
+def test_mosquitto_broker_config_listeners() -> None:
+    """The broker config declares the MQTT + WebSocket listeners it serves.
+
+    The deployed broker runs with anonymous access (devices identify via their
+    token used as the MQTT client id); per-org isolation (Req 3.5) is enforced
+    by the platform's ACL pattern (see ``org_acl_pattern`` /
+    ``topic_matches_filter``), validated above.
+    """
     conf = MOSQUITTO_CONF.read_text(encoding="utf-8")
-    assert "allow_anonymous false" in conf
-    assert "auth_opt_backends http" in conf
-    # ACL check endpoint that enforces iotaps/{org_id}/# (Req 3.5).
-    assert "/api/v1/mqtt/auth/acl" in conf
+    assert "listener 1883" in conf       # MQTT for devices
+    assert "listener 9001" in conf       # WebSocket for browser clients
+    assert "protocol websockets" in conf
 
 
 # --------------------------------------------------------------------------- #

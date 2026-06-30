@@ -60,6 +60,12 @@ export async function createGroup(name) {
   return data.group; // { group } -> group
 }
 
+/** List device groups in the caller's organization (Req 5.5). */
+export async function listGroups() {
+  const { data } = await apiClient.get("/devices/groups");
+  return data; // [group]
+}
+
 /**
  * Fetch the QR PNG for a device as an object URL the caller can use as an
  * <img> src. The caller is responsible for revoking the URL when done.

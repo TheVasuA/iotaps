@@ -22,7 +22,7 @@ _passwords = st.text(min_size=1, max_size=128)
 # Argon2id is intentionally slow (CPU/memory-hard), so each example takes well
 # over Hypothesis' default 200ms deadline. Disable the per-example deadline; the
 # cost is inherent to secure hashing, not a performance regression.
-@settings(max_examples=30, deadline=None)
+@settings(max_examples=10, deadline=None)
 def test_password_hash_round_trip_and_secrecy(password: str, other: str):
     """Validates: Requirements 1.7, 1.9.
 

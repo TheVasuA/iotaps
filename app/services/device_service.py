@@ -330,6 +330,12 @@ class DeviceService:
     # ------------------------------------------------------------------
     # Groups (Req 5.5)
     # ------------------------------------------------------------------
+    async def list_groups(self) -> list[DeviceGroup]:
+        """List device groups in the caller's org (Req 5.5)."""
+        stmt = self._scope.select(DeviceGroup).order_by(DeviceGroup.name.asc())
+        result = await self._session.execute(stmt)
+        return list(result.scalars().all())
+
     async def create_group(self, name: str) -> DeviceGroup:
         """Create a device group in the caller's org."""
         if not name or not name.strip():

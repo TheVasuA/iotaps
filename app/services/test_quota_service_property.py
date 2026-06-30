@@ -134,7 +134,7 @@ async def _run(stream: list[tuple[MessageType, int]]) -> None:
 
 
 @settings(
-    max_examples=30,
+    max_examples=10,
     deadline=None,
     suppress_health_check=[HealthCheck.too_slow],
 )

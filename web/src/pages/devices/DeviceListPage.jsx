@@ -17,6 +17,7 @@ import { Badge } from "@/components/ui/badge";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import {
   fetchDevices,
+  fetchDeviceGroups,
   setFilters,
   updateDeviceStatus,
   selectDevices,
@@ -130,7 +131,6 @@ const DeviceRow = memo(function DeviceRow({ device: d, groupName }) {
 
 export default function DeviceListPage() {
   const dispatch = useAppDispatch();
-  const navigate = useNavigate();
   const devices = useAppSelector(selectDevices);
   const groups = useAppSelector(selectDeviceGroups);
   const filters = useAppSelector(selectDeviceFilters);
@@ -147,6 +147,12 @@ export default function DeviceListPage() {
       fetchDevices({ groupId: filters.groupId, status: filters.status })
     );
   }, [dispatch, filters.groupId, filters.status]);
+
+  // Load device groups once so the filter dropdown and provisioning wizard
+  // reflect existing groups (Req 5.5), not just ones created this session.
+  useEffect(() => {
+    dispatch(fetchDeviceGroups());
+  }, [dispatch]);
 
   // Subscribe to real-time device status updates via WebSocket instead of
   // polling. Each device's channel pushes online/offline changes instantly.

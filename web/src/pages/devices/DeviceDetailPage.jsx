@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import {
@@ -10,15 +10,10 @@ import {
   Copy,
   Eye,
   EyeSlash,
-  Lightning,
   CreditCard,
   Plugs,
   PlugsConnected,
-  ArrowsClockwise,
   Broadcast,
-  CaretRight,
-  CaretDown,
-  Circle,
   DownloadSimple,
 } from "@phosphor-icons/react";
 import { Button } from "@/components/ui/button";
@@ -30,13 +25,13 @@ import {
   Card,
   CardHeader,
   CardTitle,
-  CardDescription,
   CardContent,
 } from "@/components/ui/card";
 import { Dialog, DialogBody, DialogFooter } from "@/components/ui/dialog";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import {
   fetchDevices,
+  fetchDeviceGroups,
   saveDevice,
   removeDevice,
   upsertDevice,
@@ -218,6 +213,11 @@ export default function DeviceDetailPage() {
   useEffect(() => {
     if (!device && allDevices.length === 0) dispatch(fetchDevices());
   }, [dispatch, device, allDevices.length]);
+
+  // Ensure groups are available for the group dropdown on direct navigation.
+  useEffect(() => {
+    dispatch(fetchDeviceGroups());
+  }, [dispatch]);
 
   useEffect(() => {
     let active = true;

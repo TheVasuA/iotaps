@@ -112,7 +112,14 @@ def client(session_factory, fake_redis, monkeypatch):
             yield s
 
     app.dependency_overrides[get_session] = _override_session
-    return TestClient(app)
+    # Use the TestClient as a context manager so a single blocking portal (and
+    # therefore a single asyncio event loop) is shared across every request in a
+    # test. The in-memory FakeRedis binds its internal queues to the loop of
+    # first use; without a shared loop, a second redis-touching request (e.g.
+    # refresh/logout after login) would run on a fresh loop and raise
+    # "bound to a different event loop".
+    with TestClient(app) as c:
+        yield c
 
 
 def _url(path: str) -> str:

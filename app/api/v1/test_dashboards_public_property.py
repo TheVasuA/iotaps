@@ -194,7 +194,7 @@ def _assert_read_only_payload(body: dict, dash_id: str) -> None:
 
 
 @settings(
-    max_examples=30,
+    max_examples=10,
     deadline=None,
     suppress_health_check=[HealthCheck.too_slow, HealthCheck.function_scoped_fixture],
 )

@@ -200,6 +200,7 @@ def _with_status(record: CommandRecord, status: CommandStatus) -> CommandRecord:
         org_id=record.org_id,
         type=record.type,
         value=record.value,
+        target=record.target,
         status=status,
         created_at=record.created_at,
         updated_at=_now_iso(),

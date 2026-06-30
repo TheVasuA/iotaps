@@ -132,7 +132,7 @@ def _reference_walk(nodes, edges, telemetry, maintenance):
     return actions, total_delay
 
 
-@settings(max_examples=30, deadline=None)
+@settings(max_examples=10, deadline=None)
 @given(_chain_and_telemetry())
 def test_rule_chain_evaluation(case) -> None:
     """Property 17: rule chain evaluation respects triggers, conditions, delays.

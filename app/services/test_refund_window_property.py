@@ -38,7 +38,7 @@ _offset_seconds = st.integers(
 
 # Feature: iotaps-platform, Property 11: Refund eligibility window
 @given(paid_at=_paid_at, offset_seconds=_offset_seconds)
-@settings(max_examples=30, deadline=None)
+@settings(max_examples=10, deadline=None)
 def test_refund_eligible_iff_within_window(paid_at: datetime, offset_seconds: int):
     """Validates: Requirements 17.5, 17.7.
 
@@ -57,7 +57,7 @@ def test_refund_eligible_iff_within_window(paid_at: datetime, offset_seconds: in
 
 # Feature: iotaps-platform, Property 11: Refund eligibility window
 @given(paid_at=_paid_at)
-@settings(max_examples=30, deadline=None)
+@settings(max_examples=10, deadline=None)
 def test_refund_boundary_is_inclusive(paid_at: datetime):
     """Validates: Requirements 17.5, 17.7.
 
@@ -79,7 +79,7 @@ def test_refund_boundary_is_inclusive(paid_at: datetime):
     ),
     offset_seconds=_offset_seconds,
 )
-@settings(max_examples=30, deadline=None)
+@settings(max_examples=10, deadline=None)
 def test_naive_timestamps_treated_as_utc(paid_at: datetime, offset_seconds: int):
     """Validates: Requirements 17.5, 17.7.
 

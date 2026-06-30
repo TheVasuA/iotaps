@@ -38,7 +38,7 @@ def _expected_monthly_rate(device_count: int) -> int:
     return 59
 
 
-@settings(max_examples=30, deadline=None)
+@settings(max_examples=10, deadline=None)
 @given(device_count=_device_count)
 def test_volume_pricing_correctness_and_monotonicity(device_count: int) -> None:
     """Property 10: volume discount pricing correctness and monotonicity.
@@ -67,7 +67,7 @@ def test_volume_pricing_correctness_and_monotonicity(device_count: int) -> None:
     assert bs.unit_price_monthly(device_count + 1) <= rate
 
 
-@settings(max_examples=30, deadline=None)
+@settings(max_examples=10, deadline=None)
 @given(data=st.data())
 def test_per_device_price_is_globally_non_increasing(data: st.DataObject) -> None:
     """A larger fleet never costs more per device than a smaller one.

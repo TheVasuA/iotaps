@@ -90,6 +90,7 @@ def _record(command_id: str, status: CommandStatus, device_id: str = "dev1") -> 
         org_id="org1",
         type="on",
         value=None,
+        target=None,
         status=status,
         created_at="2025-01-01T00:00:00+00:00",
         updated_at="2025-01-01T00:00:00+00:00",

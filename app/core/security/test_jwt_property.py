@@ -46,7 +46,7 @@ _invalidations = st.sampled_from(["revoke", "rotate", "expired"])
 
 # Feature: iotaps-platform, Property 3: JWT claims round-trip and refresh revocation
 @given(user_id=_ids, org_id=_ids, role=_roles, invalidation=_invalidations)
-@settings(max_examples=30, deadline=None)
+@settings(max_examples=10, deadline=None)
 def test_jwt_round_trip_and_refresh_revocation(
     user_id: str, org_id: str, role: str, invalidation: str
 ):

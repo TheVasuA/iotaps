@@ -6,6 +6,7 @@ import {
   deleteDevice,
   assignDevice,
   createGroup,
+  listGroups,
 } from "@/lib/devicesApi";
 import { extractApiError } from "@/lib/authApi";
 
@@ -90,6 +91,17 @@ export const createDeviceGroup = createAsyncThunk(
   }
 );
 
+export const fetchDeviceGroups = createAsyncThunk(
+  "devices/fetchGroups",
+  async (_, { rejectWithValue }) => {
+    try {
+      return await listGroups();
+    } catch (err) {
+      return rejectWithValue(extractApiError(err));
+    }
+  }
+);
+
 const devicesSlice = createSlice({
   name: "devices",
   initialState,
@@ -137,6 +149,9 @@ const devicesSlice = createSlice({
       })
       .addCase(createDeviceGroup.fulfilled, (state, action) => {
         state.groups.push(action.payload);
+      })
+      .addCase(fetchDeviceGroups.fulfilled, (state, action) => {
+        state.groups = action.payload;
       });
   },
 });

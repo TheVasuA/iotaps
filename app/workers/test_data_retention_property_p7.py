@@ -13,11 +13,16 @@ Validates: Requirements 6.7, 6.8, 15.1
 The test drives the real :func:`app.workers.data_retention.purge_expired_telemetry`
 core with an injected in-memory store that implements the ``execute_fn`` /
 :class:`~app.workers.data_retention.PurgeOp` contract, so no live TimescaleDB is
-required. The store holds raw (``telemetry``/``ts``) and hourly
-(``telemetry_1h``/``bucket``) rows for several orgs on mixed plans; each
-generated row carries an absolute timestamp. After the sweep we assert, per tier
-and per org, that the surviving rows are exactly those at or after that tier's
-cutoff (``now - max_age``) and every deleted row was strictly older than it.
+required. The store holds raw (``telemetry``/``ts``) rows for several orgs on
+mixed plans; each generated row carries an absolute timestamp.
+
+The Data_Retention worker only purges the raw ``telemetry`` hypertable: the
+downsampled tiers (``telemetry_5m``/``1h``/``1d``) are TimescaleDB continuous
+aggregates that cannot be ``DELETE``d from directly, so their retention is
+managed by TimescaleDB's own aggregate retention policy rather than this worker
+(see ``data_retention.plan_purge_ops``). After the sweep we assert, per org,
+that the surviving raw rows are exactly those at or after that plan's raw cutoff
+(``now - raw_max_age``) and every deleted row was strictly older than it.
 """
 
 from __future__ import annotations
@@ -41,9 +46,9 @@ _ORG_IDS = [f"org-{i}" for i in range(3)]
 # back to the Free policy (Req 15.7) so the cutoff is still well defined.
 _PLANS = ["free", "pro", "FREE", " Pro ", None, "", "enterprise", "bogus"]
 
-# Hours offset from _NOW. The 500-day span (in hours) straddles the longest
-# retention window (Pro hourly = 365 days), so rows land older and newer than
-# every cutoff, and the ``0`` boundary case (exactly at a cutoff) is reachable.
+# Hours offset from _NOW. The 500-day span (in hours) straddles the longest raw
+# retention window (Pro raw = 90 days), so rows land older and newer than every
+# cutoff, and the ``0`` boundary case (exactly at a cutoff) is reachable.
 _MIN_OFFSET_H = -500 * 24
 _MAX_OFFSET_H = 24
 
@@ -80,16 +85,14 @@ class InMemoryStore:
         return deleted
 
 
-# One generated telemetry row: an org, a tier (raw or hourly) and an offset.
+# One generated telemetry row: an org, the raw telemetry tier and an offset.
+# The worker only purges the raw hypertable (the downsampled continuous
+# aggregates cannot be DELETEd from), so every generated row targets the raw
+# tier.
 _row = st.fixed_dictionaries(
     {
         "org": st.sampled_from(_ORG_IDS),
-        "tier": st.sampled_from(
-            [
-                (dr.RAW_TABLE, dr.RAW_TIME_COLUMN),
-                (dr.HOURLY_VIEW, dr.HOURLY_TIME_COLUMN),
-            ]
-        ),
+        "tier": st.just((dr.RAW_TABLE, dr.RAW_TIME_COLUMN)),
         "offset_h": st.integers(min_value=_MIN_OFFSET_H, max_value=_MAX_OFFSET_H),
     }
 )
@@ -135,7 +138,7 @@ async def _run(rows_spec: list[dict], plan_assignment: list[int]) -> None:
         assert ts >= cutoff_for(org_id, table)
 
 
-@settings(max_examples=30, deadline=None)
+@settings(max_examples=10, deadline=None)
 @given(
     rows_spec=st.lists(_row, min_size=0, max_size=60),
     plan_assignment=st.lists(

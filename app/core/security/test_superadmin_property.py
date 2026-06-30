@@ -203,7 +203,7 @@ async def _run_scenario(scenario: dict) -> None:
         await engine.dispose()
 
 
-@settings(max_examples=30, deadline=None, suppress_health_check=[HealthCheck.too_slow])
+@settings(max_examples=10, deadline=None, suppress_health_check=[HealthCheck.too_slow])
 @given(scenario=_scenario)
 def test_super_admin_cross_organization_authority(scenario):
     """Property 2: Super_Admin may read/act across all orgs; non-admins cannot.

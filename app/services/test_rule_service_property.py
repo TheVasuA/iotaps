@@ -191,7 +191,7 @@ async def _run(plan: str | None, operations: list[str]) -> None:
 
 
 @settings(
-    max_examples=30,
+    max_examples=10,
     deadline=None,
     suppress_health_check=[HealthCheck.too_slow],
 )

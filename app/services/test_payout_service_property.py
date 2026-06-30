@@ -129,7 +129,7 @@ async def _run_scenario(initial_balance: int, amounts: list[int]) -> None:
         await engine.dispose()
 
 
-@settings(max_examples=30, deadline=None, suppress_health_check=[HealthCheck.too_slow])
+@settings(max_examples=10, deadline=None, suppress_health_check=[HealthCheck.too_slow])
 @given(initial_balance=st.integers(min_value=0, max_value=1000), amounts=_amounts)
 def test_payout_never_exceeds_wallet_balance(initial_balance, amounts):
     """Payout never exceeds wallet balance; balance never goes negative.

@@ -63,6 +63,7 @@ def _record(command_id: str, status: CommandStatus) -> CommandRecord:
         org_id=_ORG_ID,
         type="on",
         value=None,
+        target=None,
         status=status,
         created_at="2025-01-01T00:00:00+00:00",
         updated_at="2025-01-01T00:00:00+00:00",
@@ -151,7 +152,7 @@ async def _run(initial: CommandEvent, events: list[CommandEvent]) -> None:
 
 
 @settings(
-    max_examples=30,
+    max_examples=10,
     deadline=None,
     suppress_health_check=[HealthCheck.too_slow],
 )

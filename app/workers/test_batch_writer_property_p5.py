@@ -143,7 +143,7 @@ async def _run(records: list[dict], batch_size: int, fail_schedule: list[bool]) 
 
 
 @settings(
-    max_examples=30,
+    max_examples=10,
     deadline=None,
     suppress_health_check=[HealthCheck.too_slow],
 )

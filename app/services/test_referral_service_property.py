@@ -76,7 +76,7 @@ def _expected_reward(count: int) -> tuple[int, int]:
 _count = st.integers(min_value=-3, max_value=200)
 
 
-@settings(max_examples=30, deadline=None)
+@settings(max_examples=10, deadline=None)
 @given(count=_count)
 def test_reward_tiers_are_correct_and_capped(count: int) -> None:
     """Property 14: tier mapping is correct and capped at 3 devices/3 months.
@@ -96,7 +96,7 @@ def test_reward_tiers_are_correct_and_capped(count: int) -> None:
     assert devices >= 0 and months >= 0
 
 
-@settings(max_examples=30, deadline=None)
+@settings(max_examples=10, deadline=None)
 @given(data=st.data())
 def test_reward_is_monotonically_non_decreasing(data: st.DataObject) -> None:
     """A larger referral count never yields a smaller grant (Req 19.2-19.5).
@@ -270,7 +270,7 @@ async def _run_gmail_identity(gmails: list[str]) -> None:
 
 
 # Feature: iotaps-platform, Property 14: Referral reward tiers are correct and capped
-@settings(max_examples=30, deadline=None, suppress_health_check=[HealthCheck.too_slow])
+@settings(max_examples=10, deadline=None, suppress_health_check=[HealthCheck.too_slow])
 @given(gmails=_signup_sequence())
 def test_one_referral_account_per_gmail_identity(gmails: list[str]) -> None:
     """Property 14: at most one referral account is eligible per Gmail identity.

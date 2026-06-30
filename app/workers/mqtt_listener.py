@@ -162,14 +162,23 @@ def validate_telemetry_payload(payload: bytes | str) -> Optional[dict[str, Any]]
                 return None
         return obj
 
-    # Simple format: the entire object is the data (from ESP32)
-    # Generate timestamp and wrap it
+    # Simple format: the entire object is the data (from ESP32). Reserved
+    # envelope keys (``ts``/``data``) are never sensor readings, so a payload
+    # that carries them but failed strict validation above (e.g. a non-string
+    # ``ts``) is malformed and must be rejected rather than silently
+    # reinterpreted as a bare reading.
     from datetime import datetime, timezone
-    has_numeric = any(isinstance(v, (int, float)) and not isinstance(v, bool) for v in obj.values())
-    if has_numeric:
+    readings = {
+        k: v
+        for k, v in obj.items()
+        if k not in ("ts", "data")
+        and isinstance(v, (int, float))
+        and not isinstance(v, bool)
+    }
+    if readings:
         return {
             "ts": datetime.now(timezone.utc).isoformat(),
-            "data": {k: v for k, v in obj.items() if isinstance(v, (int, float)) and not isinstance(v, bool)},
+            "data": readings,
         }
 
     return None

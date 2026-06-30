@@ -100,8 +100,18 @@ def test_validation_error_uses_structured_body() -> None:
     assert "message" in body
 
 
-def test_cors_preflight_allowed() -> None:
-    client = _client()
+def test_cors_preflight_allowed(monkeypatch) -> None:
+    # Build the app with a permissive CORS origin list so the test does not
+    # depend on the ambient deployment `.env` (which restricts origins to the
+    # production hostnames). This keeps the test asserting CORS *wiring* rather
+    # than a particular deployment's allow-list.
+    from app.core.config import Settings
+    import app.main as main_module
+
+    monkeypatch.setattr(
+        main_module, "get_settings", lambda: Settings(cors_allow_origins="*")
+    )
+    client = TestClient(create_app())
     resp = client.options(
         f"{API_V1_PREFIX}/health",
         headers={
