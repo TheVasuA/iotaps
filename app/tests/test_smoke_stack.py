@@ -7,8 +7,9 @@ core boot-time invariants hold:
   - the Docker Compose stack declares every required service with self-heal
     `restart: always` (Req 32.3);
   - the Nginx reverse proxy routes the SPA, REST API, and WebSocket gateway,
-    with SSL terminated at the Cloudflare edge in front of it and the real
-    client IP restored from `CF-Connecting-IP` (Req 32.3 / 32.4);
+    with TLS terminated in front of it (Cloudflare edge, a host-level nginx, or
+    this container) and the real client IP restored from the forwarded-for
+    chain (Req 32.3 / 32.4);
   - dynamic platform settings load through the read-through loader (Req 29.4 /
     boot dependency for 28.1);
   - per-org MQTT ACLs permit same-org topics and deny cross-org publish/
@@ -115,25 +116,33 @@ def test_nginx_config_files_exist() -> None:
     assert NGINX_REALIP_CONF.is_file(), f"missing {NGINX_REALIP_CONF}"
 
 
-def test_nginx_ssl_terminated_at_cloudflare_edge() -> None:
-    """SSL is terminated at the Cloudflare edge in front of Nginx (Req 32.3/32.4).
+def test_nginx_restores_real_client_ip_behind_any_proxy() -> None:
+    """The real visitor IP survives every hop in front of Nginx (Req 32.3/32.4).
 
-    The platform fronts Nginx with Cloudflare (orange-cloud proxied), so TLS is
-    terminated at Cloudflare and Nginx receives proxied HTTP. For per-IP login
-    blocking (Req 29.3) and correct https awareness to keep working, Nginx must
-    restore the original visitor IP from Cloudflare's ``CF-Connecting-IP`` header
-    and forward the original scheme upstream.
+    TLS may terminate at the Cloudflare edge, at a host-level nginx on a shared
+    VPS, or in this container itself. In each case the TCP peer Nginx sees is a
+    proxy, not the visitor, so per-IP login blocking (Req 29.3) would otherwise
+    throttle the proxy — one shared bucket for every user.
+
+    ``X-Forwarded-For`` is asserted rather than ``CF-Connecting-IP`` because it
+    is the only header present in all three topologies; ``real_ip_recursive``
+    makes it spoof-resistant by skipping trusted hops from the right.
     """
     realip = NGINX_REALIP_CONF.read_text(encoding="utf-8")
-    # Real client IP restored from the Cloudflare edge (which did SSL).
-    assert "real_ip_header CF-Connecting-IP" in realip
-    assert "set_real_ip_from" in realip
+    assert "real_ip_header X-Forwarded-For" in realip
+    assert "real_ip_recursive on" in realip
+    # Cloudflare edge ranges stay trusted for the orange-cloud topology.
+    assert "set_real_ip_from 173.245.48.0/20" in realip
+    # ...and the local proxy hop (host nginx reaching us over the Docker bridge).
+    assert "set_real_ip_from 172.16.0.0/12" in realip
 
     conf = NGINX_SITE_CONF.read_text(encoding="utf-8")
     # The original (https) scheme is forwarded so the app sees the real scheme.
     assert "X-Forwarded-Proto $scheme" in conf
-    # Dedicated API vhost that Cloudflare proxies to (api.iotaps.com).
-    assert "server_name api.iotaps.com" in conf
+    # Single-origin vhost: one server block serves the SPA and proxies the API,
+    # so there is no separate api.* host and therefore no cross-origin CORS.
+    assert "server_name localhost _" in conf
+    assert "proxy_pass http://iotaps_api" in conf
 
 
 def test_nginx_routes_spa_rest_and_websocket() -> None:
