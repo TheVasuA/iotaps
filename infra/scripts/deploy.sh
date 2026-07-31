@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# deploy.sh — safe rolling update of the IoTAPS backend on a live server.
+# deploy.sh â€” safe rolling update of the IoTAPS backend on a live server.
 #
 # Encodes the ordering that a naive "pull, build, up" sequence gets wrong. Each
 # step below exists because skipping it produced a real outage during the first
@@ -17,7 +17,7 @@
 #      Mosquitto keep their data and connections.
 #   4. Restart nginx LAST. It resolves upstream container IPs once at startup,
 #      so recreating the API behind it serves 502 until nginx is restarted.
-#   5. Verify through nginx, not just on the API port — that is the path real
+#   5. Verify through nginx, not just on the API port â€” that is the path real
 #      traffic takes.
 #
 # Data volumes are never touched. `docker compose down` is not used at all.
@@ -52,7 +52,7 @@ STAMP="$(date +%Y%m%d-%H%M%S)"
 DUMP="pre-deploy-${STAMP}.dump"
 docker exec -t "${PG_CONTAINER}" \
   pg_dump -U "${PG_USER}" -d "${PG_DB}" -Fc -f "/tmp/${DUMP}" \
-  || fail "pg_dump failed — aborting before any change"
+  || fail "pg_dump failed â€” aborting before any change"
 docker cp "${PG_CONTAINER}:/tmp/${DUMP}" "${BACKUP_DIR}/${DUMP}"
 docker exec "${PG_CONTAINER}" rm -f "/tmp/${DUMP}"
 echo "wrote ${BACKUP_DIR}/${DUMP}"
@@ -62,7 +62,7 @@ if [[ "${SKIP_PULL:-0}" != "1" ]]; then
   step "Pulling latest main"
   git pull origin main
 else
-  step "Skipping git pull (SKIP_PULL=1) — deploying working tree"
+  step "Skipping git pull (SKIP_PULL=1) â€” deploying working tree"
 fi
 
 # --- 3. build ----------------------------------------------------------------
@@ -71,7 +71,7 @@ docker compose build fastapi-api || fail "API image build failed"
 
 if [[ "${SKIP_WEB:-0}" != "1" ]]; then
   # web/.env.production is read by Vite at BUILD time, so frontend/env changes
-  # only ship via a rebuild — restarting the container is not enough.
+  # only ship via a rebuild â€” restarting the container is not enough.
   step "Building the web image (SPA bundle is baked in)"
   docker compose build nginx || fail "web image build failed"
 fi
@@ -79,7 +79,7 @@ fi
 # --- 4. migrate on the new image, before the app restarts --------------------
 step "Running migrations in a one-off container"
 docker compose run --rm --no-deps --workdir /srv/app fastapi-api \
-  alembic upgrade head || fail "migrations failed — stack still on old image"
+  alembic upgrade head || fail "migrations failed â€” stack still on old image"
 
 # --- 5. roll the app containers ---------------------------------------------
 step "Recreating app containers (data services untouched)"
@@ -87,9 +87,10 @@ docker compose up -d --no-deps fastapi-api fastapi-ws workers \
   || fail "app containers failed to start"
 
 # --- 6. nginx last, to pick up new upstream IPs ------------------------------
-step "Restarting nginx so it re-resolves upstream addresses"
-docker compose up -d --no-deps nginx
-docker compose restart nginx
+# --force-recreate rather than up-then-restart: recreating the container already
+# re-resolves the upstream addresses, so this is one brief drop instead of two.
+step "Recreating nginx so it re-resolves upstream addresses"
+docker compose up -d --no-deps --force-recreate nginx
 
 # --- 7. verify ---------------------------------------------------------------
 step "Verifying"
