@@ -179,10 +179,10 @@ async def refresh_aggregate(
 
     from sqlalchemy import text
     from sqlalchemy.exc import (
+        DBAPIError,
         DisconnectionError,
         InterfaceError,
         OperationalError,
-        ProgrammingError,
     )
 
     from app.db.session import engine
@@ -192,8 +192,21 @@ async def refresh_aggregate(
             conn = await conn.execution_options(isolation_level="AUTOCOMMIT")
             try:
                 await conn.execute(text(f"REFRESH MATERIALIZED VIEW CONCURRENTLY {view}"))
-            except ProgrammingError:
-                # No unique index — fall back to non-concurrent refresh
+            except DBAPIError:
+                # Two situations land here and a plain refresh resolves both:
+                #   * the view has no unique index (ProgrammingError);
+                #   * the view has never been populated, so Postgres refuses
+                #     CONCURRENTLY outright. Migration 0001 creates these views
+                #     WITH NO DATA, so this is the state of EVERY fresh deploy.
+                #
+                # Catch DBAPIError rather than ProgrammingError: asyncpg raises
+                # FeatureNotSupportedError for the unpopulated case, which the
+                # dialect surfaces as a generic DBAPIError, not a mapped
+                # subclass. Catching the subclass alone let the worker die on
+                # its first cycle after a fresh install.
+                #
+                # A connection-level failure during the fallback re-raises and
+                # is translated to TimescaleUnavailable by the outer handler.
                 await conn.execute(text(f"REFRESH MATERIALIZED VIEW {view}"))
     except (OperationalError, InterfaceError, DisconnectionError, ConnectionError, OSError) as exc:
         raise TimescaleUnavailable(str(exc)) from exc
