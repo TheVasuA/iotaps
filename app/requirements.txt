@@ -2,6 +2,10 @@
 fastapi==0.115.5
 uvicorn[standard]==0.32.1
 gunicorn==23.0.0
+# Required by FastAPI to parse multipart form data. The /admin/platform/restore
+# endpoint declares `UploadFile = File(...)`, and FastAPI raises at IMPORT time
+# when this is missing — so omitting it breaks app startup, not just that route.
+python-multipart==0.0.32
 pydantic==2.10.3
 pydantic-settings==2.7.0
 redis==5.2.1
