@@ -1,7 +1,11 @@
 # IoTAPS backend image (FastAPI API + background workers)
 # Used by both the `fastapi-api` and `workers` Compose services. The runtime
 # command differs per service (gunicorn vs supervisord) but the image is shared.
-FROM python:3.12-slim
+# Pinned to bookworm on purpose: the PGDG apt repo below is codename-specific.
+# The floating `python:3.12-slim` tag moved to Debian 13 (trixie), where the
+# bookworm libpq5 needs libldap-2.5-0 (trixie only has libldap2 2.6) — apt then
+# fails with "held broken packages". Pinning keeps the base and repo in sync.
+FROM python:3.12-slim-bookworm
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
@@ -20,7 +24,8 @@ RUN apt-get update \
     && install -d /usr/share/postgresql-common/pgdg \
     && curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc \
         -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
-    && echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt bookworm-pgdg main" \
+    && . /etc/os-release \
+    && echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt ${VERSION_CODENAME}-pgdg main" \
         > /etc/apt/sources.list.d/pgdg.list \
     && apt-get update \
     && apt-get install -y --no-install-recommends postgresql-client-16 \
