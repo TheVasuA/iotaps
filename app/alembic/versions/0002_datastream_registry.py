@@ -10,7 +10,9 @@ import sqlalchemy as sa
 
 # revision identifiers
 revision = "0002"
-down_revision = "0001_initial_schema"
+# Must match the `revision` identifier declared in 0001, which is
+# "0001_initial" — not the module filename ("0001_initial_schema").
+down_revision = "0001_initial"
 branch_labels = None
 depends_on = None
 
