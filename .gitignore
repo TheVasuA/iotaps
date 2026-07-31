@@ -1,6 +1,8 @@
 # Environment / secrets
 .env
 *.env.local
+# Real production secrets — never commit. Use .env.example as the template.
+.env.production
 app/secrets/
 infra/nginx/certs/
 
