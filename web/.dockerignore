@@ -1,0 +1,25 @@
+# Keep the build context small and free of secrets.
+
+# SECRET: web/.env holds GOOGLE_OAUTH_CLIENT_SECRET and local-dev API URLs.
+# It must never enter the image. Vite loads .env in every mode, so copying it
+# would both leak the secret and let localhost URLs bleed into a prod build.
+# .env.production (relative, same-origin URLs) is the only env file needed.
+.env
+.env.local
+.env.*.local
+
+# Reinstalled in-image via `npm ci`; host copies are platform-specific.
+node_modules
+
+# Rebuilt in-image; a stale host build must not shadow it.
+dist
+.vite
+
+# Not needed to build the SPA.
+.gitignore
+README.md
+eslint.config.js
+Dockerfile
+.dockerignore
+**/*.test.js
+**/*.test.jsx
