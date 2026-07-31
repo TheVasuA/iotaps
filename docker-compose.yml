@@ -20,9 +20,13 @@ services:
     depends_on:
       - fastapi-api
       - fastapi-ws
+    # SHARED HOST: a host-level nginx already owns :80/:443 (it fronts other
+    # apps on this VPS), so we publish to a high port and let that nginx
+    # reverse-proxy iotaps.com -> 127.0.0.1:8088. On a dedicated VPS with
+    # nothing on :80, change this back to "80:80" + "443:443" and terminate TLS
+    # here instead (see DEPLOY.md PART 5).
     ports:
-      - "80:80"
-      - "443:443"
+      - "127.0.0.1:8088:80"
     volumes:
       # Config stays mounted (not baked) so routing/TLS edits need only a
       # container restart rather than an image rebuild. The SPA itself now
@@ -49,8 +53,10 @@ services:
         condition: service_healthy
     expose:
       - "8000"
+    # Loopback only: nginx reaches the API over the internal Compose network,
+    # so the host mapping exists purely for local curl/debugging.
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     command: >
       gunicorn app.main:app
       --workers ${API_WORKERS:-4}
@@ -153,8 +159,11 @@ services:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB}
+    # Loopback only. Containers connect via the `postgres` service name on the
+    # internal network; publishing on 0.0.0.0 would expose the DB to the
+    # internet whenever the host firewall is off.
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -175,8 +184,9 @@ services:
     # least-recently-used keys instead so the platform keeps running.
     command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD}", "--maxmemory", "512mb", "--maxmemory-policy", "allkeys-lru"]
     mem_limit: 768m
+    # Loopback only (same reasoning as postgres).
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     volumes:
       - redis_data:/data
     healthcheck:
