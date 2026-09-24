@@ -59,9 +59,9 @@ export default function PublicLayout() {
       <header className="border-b border-border">
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-6 py-3">
           <div className="flex items-center gap-6">
-            <Link to="/" className="flex items-center gap-2 text-lg font-semibold text-primary">
-              <Logo size={22} />
-              IoTAPS
+            <Link to="/" className="flex items-center gap-3 font-brand text-3xl font-bold tracking-tight text-primary">
+              <Logo size={52} />
+              <span>iotaps<span className="font-medium text-primary/60">.com</span></span>
             </Link>
             <nav className="hidden gap-1 md:flex">
               {primaryNav.map((item) => (

@@ -50,9 +50,9 @@ export default function AppLayout() {
     <div className="min-h-screen bg-background text-foreground">
       <header className="flex items-center justify-between border-b border-border px-6 py-3">
         <div className="flex items-center gap-6">
-          <span className="flex items-center gap-2 text-lg font-semibold text-primary" title="IoT Automation Platform Services">
-            <Logo size={22} />
-            IoTAPS
+          <span className="flex items-center gap-3 font-brand text-3xl font-bold tracking-tight text-primary" title="IoT Automation Platform Services">
+            <Logo size={52} />
+            <span>iotaps<span className="font-medium text-primary/60">.com</span></span>
           </span>
           <nav className="flex gap-1">
             {items.map((item) => (

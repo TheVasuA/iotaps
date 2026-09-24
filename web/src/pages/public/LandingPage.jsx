@@ -107,12 +107,12 @@ export default function LandingPage() {
         />
         <div className="relative mx-auto max-w-6xl px-6 py-20 text-center sm:py-28">
           <span className="mx-auto inline-flex items-center gap-2 rounded-full border border-border bg-card/70 px-4 py-1.5 text-xs font-medium text-muted-foreground backdrop-blur">
-            <span className="h-1.5 w-1.5 rounded-full bg-secondary" />
+            <span className="h-1.5 w-1.5 rounded-full bg-primary" />
             Built for India&apos;s device fleets at scale
           </span>
           <h1 className="mx-auto mt-6 max-w-3xl text-4xl font-bold tracking-tight text-foreground sm:text-6xl">
             One platform to{" "}
-            <span className="bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent">
+            <span className="text-primary">
               provision, visualize, and automate
             </span>{" "}
             your IoT fleet
@@ -138,7 +138,7 @@ export default function LandingPage() {
             {["No credit card required", "Free tier to start", "Cancel anytime"].map(
               (item) => (
                 <li key={item} className="inline-flex items-center gap-1.5">
-                  <CheckCircle size={16} weight="fill" className="text-secondary" />
+                  <CheckCircle size={16} weight="fill" className="text-primary" />
                   {item}
                 </li>
               )
@@ -230,7 +230,7 @@ export default function LandingPage() {
         <div className="relative overflow-hidden rounded-2xl border border-border bg-card px-6 py-14 text-center shadow-sm">
           <div
             aria-hidden="true"
-            className="pointer-events-none absolute inset-0 bg-gradient-to-br from-primary/10 to-secondary/10"
+            className="pointer-events-none absolute inset-0 bg-gradient-to-br from-primary/10 to-primary/5"
           />
           <div className="relative">
             <h2 className="mx-auto max-w-2xl text-3xl font-bold tracking-tight text-foreground">
