@@ -1,3 +1,9 @@
-# SPA fallback — all routes serve index.html for React Router client-side routing.
+# SPA fallback for React Router client-side routing.
 # API calls go directly to api.iotaps.com (set via VITE_API_BASE_URL).
-/*    /index.html   200
+#
+# NOTE: Cloudflare Pages provides automatic SPA fallback — any request that
+# does not match a built static asset is served index.html. A bare
+# "/*  /index.html  200" rule is therefore redundant AND is rejected by the
+# Pages redirect parser as a self-loop ("Infinite loop detected ... ignored").
+# We leave this file rule-free so deep links (/login, /pricing, refreshes)
+# work via the built-in fallback with no build warning.

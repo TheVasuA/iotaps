@@ -89,35 +89,45 @@ export default function LoginPage() {
   return (
     <div className="flex h-screen overflow-hidden bg-background text-foreground">
       {/* Left panel — branding */}
-      <div className="hidden lg:flex lg:w-1/2 flex-col justify-between bg-primary/5 p-10">
+      <div className="hidden lg:flex lg:w-1/2 flex-col justify-between bg-primary/5 p-12">
         <div>
-          <Link to="/" className="flex items-center gap-2 text-2xl font-bold text-primary"><Logo size={28} />IoTAPS</Link>
-          <p className="mt-1 text-xs text-muted-foreground">IoT Automation Platform Services</p>
+          <Link
+            to="/"
+            className="flex items-center gap-3 font-brand text-3xl font-bold tracking-tight text-primary"
+          >
+            <Logo size={56} />
+            <span>
+              iotaps<span className="font-medium text-primary/60">.com</span>
+            </span>
+          </Link>
+          <p className="mt-2 text-sm text-muted-foreground">
+            IoT Automation Platform Services
+          </p>
         </div>
-        <div className="space-y-4">
-          <h2 className="text-3xl font-bold text-foreground leading-tight">
+        <div className="space-y-6">
+          <h2 className="text-4xl font-bold leading-tight tracking-tight text-foreground">
             Monitor. Automate.<br />Control your fleet.
           </h2>
-          <p className="text-muted-foreground max-w-md">
+          <p className="max-w-md text-base leading-relaxed text-muted-foreground">
             Real-time dashboards, visual rule engine, OTA updates, and billing — all from one platform built for scale.
           </p>
-          <div className="flex gap-6 pt-4">
-            <div className="text-center">
-              <div className="text-2xl font-bold text-primary">10M+</div>
-              <div className="text-xs text-muted-foreground">Devices</div>
+          <div className="flex gap-10 pt-2">
+            <div>
+              <div className="text-3xl font-bold text-primary">10M+</div>
+              <div className="mt-1 text-xs text-muted-foreground">Devices</div>
             </div>
-            <div className="text-center">
-              <div className="text-2xl font-bold text-primary">99.9%</div>
-              <div className="text-xs text-muted-foreground">Uptime</div>
+            <div>
+              <div className="text-3xl font-bold text-primary">99.9%</div>
+              <div className="mt-1 text-xs text-muted-foreground">Uptime</div>
             </div>
-            <div className="text-center">
-              <div className="text-2xl font-bold text-primary">79ms</div>
-              <div className="text-xs text-muted-foreground">Latency</div>
+            <div>
+              <div className="text-3xl font-bold text-primary">79ms</div>
+              <div className="mt-1 text-xs text-muted-foreground">Latency</div>
             </div>
           </div>
         </div>
         <p className="text-xs text-muted-foreground">
-          © {new Date().getFullYear()} IoTAPS. All rights reserved.
+          © {new Date().getFullYear()} iotaps.com. All rights reserved.
         </p>
       </div>
 
@@ -125,7 +135,10 @@ export default function LoginPage() {
       <div className="flex w-full flex-col lg:w-1/2">
         {/* Top bar */}
         <div className="flex items-center justify-between px-6 py-3 shrink-0">
-          <Link to="/" className="flex items-center gap-2 text-lg font-bold text-primary lg:hidden"><Logo size={20} />IoTAPS</Link>
+          <Link to="/" className="flex items-center gap-2 font-brand text-xl font-bold tracking-tight text-primary lg:hidden">
+            <Logo size={36} />
+            <span>iotaps<span className="font-medium text-primary/60">.com</span></span>
+          </Link>
           <div className="flex items-center gap-3">
             <ThemeModeToggle />
             <Link to="/register" className="text-sm font-medium text-muted-foreground hover:text-primary">
