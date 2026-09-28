@@ -1,0 +1,229 @@
+# WebSocket tier -- the same ASGI app as the API, on :8001.
+#
+# Serves the single `/ws` endpoint (mounted at the root, NOT under /api/v1).
+# Clients authenticate with a JWT in the `?token=` query parameter because
+# browsers cannot set headers on a WebSocket handshake.
+#
+# No session affinity is needed: fan-out state lives entirely in Redis pub/sub
+# and every connection re-subscribes on connect, so any pod can serve any
+# client. What matters is long idle timeouts (see ingress.yaml) and accepting
+# that a rollout drops connections -- clients must reconnect.
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: iotaps-ws
+  labels:
+    app.kubernetes.io/name: iotaps
+    app.kubernetes.io/component: ws
+    app.kubernetes.io/part-of: iotaps
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: iotaps
+    app.kubernetes.io/component: ws
+  ports:
+    - name: http
+      port: 8001
+      targetPort: http
+      protocol: TCP
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: iotaps-ws
+  labels:
+    app.kubernetes.io/name: iotaps
+    app.kubernetes.io/component: ws
+    app.kubernetes.io/part-of: iotaps
+spec:
+  replicas: 2
+  revisionHistoryLimit: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      # Surge first, drain second: new pods must be accepting connections before
+      # any existing pod starts shedding its sockets.
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: iotaps
+      app.kubernetes.io/component: ws
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: iotaps
+        app.kubernetes.io/component: ws
+        app.kubernetes.io/part-of: iotaps
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      # gunicorn's --graceful-timeout 30 bounds the drain; the rest is slack.
+      terminationGracePeriodSeconds: 60
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: iotaps
+              app.kubernetes.io/component: ws
+      initContainers:
+        - name: wait-for-migrations
+          image: iotaps/api:latest
+          imagePullPolicy: IfNotPresent
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              set -eu
+              url=$(printf '%s' "$DATABASE_URL" | sed -e 's#+asyncpg##' -e 's#+psycopg2##')
+              until pg_isready -d "$url" -t 3 >/dev/null 2>&1; do
+                echo "waiting for postgres..."
+                sleep 2
+              done
+              until psql "$url" -tAc 'select 1 from alembic_version limit 1' >/dev/null 2>&1; do
+                echo "waiting for alembic migrations..."
+                sleep 3
+              done
+              echo "database ready"
+          env:
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef: { name: iotaps-secrets, key: POSTGRES_USER }
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: iotaps-secrets, key: POSTGRES_PASSWORD }
+            - name: POSTGRES_DB
+              valueFrom:
+                secretKeyRef: { name: iotaps-secrets, key: POSTGRES_DB }
+            - name: DATABASE_URL
+              value: postgresql+asyncpg://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@iotaps-postgres:5432/$(POSTGRES_DB)
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+          resources:
+            requests: { cpu: 50m, memory: 64Mi }
+            limits: { memory: 256Mi }
+      containers:
+        - name: ws
+          image: iotaps/api:latest
+          imagePullPolicy: IfNotPresent
+          workingDir: /srv
+          # Deliberately different from the API tier:
+          #   --timeout 0     never reap a worker for a "slow" request; every
+          #                   WebSocket is an indefinitely open request
+          #   --keep-alive    hold idle connections for an hour
+          #   no --max-requests, which would recycle workers and drop sockets
+          # Fewer workers than the API: each async worker handles thousands of
+          # concurrent connections, and each extra process costs another
+          # 30-connection Postgres pool.
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              exec gunicorn app.main:app \
+                --worker-class uvicorn.workers.UvicornWorker \
+                --workers "${WS_WORKERS:-2}" \
+                --bind 0.0.0.0:8001 \
+                --timeout 0 \
+                --keep-alive 3600 \
+                --graceful-timeout 30 \
+                --worker-tmp-dir /dev/shm \
+                --access-logfile - \
+                --error-logfile -
+          ports:
+            - name: http
+              containerPort: 8001
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: iotaps-config
+          env:
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef: { name: iotaps-secrets, key: POSTGRES_USER }
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: iotaps-secrets, key: POSTGRES_PASSWORD }
+            - name: POSTGRES_DB
+              valueFrom:
+                secretKeyRef: { name: iotaps-secrets, key: POSTGRES_DB }
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: iotaps-secrets, key: REDIS_PASSWORD }
+            - name: DATABASE_URL
+              value: postgresql+asyncpg://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@iotaps-postgres:5432/$(POSTGRES_DB)
+            - name: REDIS_URL
+              value: redis://:$(REDIS_PASSWORD)@iotaps-redis:6379/0
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef: { name: iotaps-secrets, key: JWT_SECRET }
+            - name: SUPERADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: iotaps-secrets, key: SUPERADMIN_PASSWORD, optional: true }
+            - name: RAZORPAY_KEY_ID
+              valueFrom:
+                secretKeyRef: { name: iotaps-secrets, key: RAZORPAY_KEY_ID, optional: true }
+            - name: RAZORPAY_KEY_SECRET
+              valueFrom:
+                secretKeyRef: { name: iotaps-secrets, key: RAZORPAY_KEY_SECRET, optional: true }
+            - name: RAZORPAY_WEBHOOK_SECRET
+              valueFrom:
+                secretKeyRef: { name: iotaps-secrets, key: RAZORPAY_WEBHOOK_SECRET, optional: true }
+            - name: SMTP_USERNAME
+              valueFrom:
+                secretKeyRef: { name: iotaps-secrets, key: SMTP_USERNAME, optional: true }
+            - name: SMTP_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: iotaps-secrets, key: SMTP_PASSWORD, optional: true }
+            - name: MONGODB_URI
+              valueFrom:
+                secretKeyRef: { name: iotaps-secrets, key: MONGODB_URI, optional: true }
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+          # The whole app is mounted here too, so the REST health route is
+          # available on 8001 and serves as the probe target.
+          startupProbe:
+            httpGet:
+              path: /api/v1/health
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 5
+            failureThreshold: 30
+          readinessProbe:
+            httpGet:
+              path: /api/v1/health
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /api/v1/health
+              port: http
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+              ephemeral-storage: 256Mi
+            limits:
+              memory: 1Gi
+              ephemeral-storage: 1Gi
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 256Mi

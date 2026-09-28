@@ -1,0 +1,100 @@
+# Horizontal autoscaling for the two stateless tiers.
+#
+# Requires metrics-server in the cluster (`kubectl top pods` must work).
+# There is deliberately no HPA for iotaps-workers: every worker in that pod is a
+# singleton (see workers.yaml).
+#
+# Before raising maxReplicas, check the Postgres connection budget. Each
+# gunicorn worker process opens its own pool of up to 30 connections, so
+# maxReplicas * API_WORKERS * 30 must stay under the server's max_connections
+# (300 in postgres.yaml). See k8s/README.md.
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: iotaps-api
+  labels:
+    app.kubernetes.io/name: iotaps
+    app.kubernetes.io/component: api
+    app.kubernetes.io/part-of: iotaps
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: iotaps-api
+  minReplicas: 2
+  maxReplicas: 6 # 6 * 2 workers * 30 conns = 360 worst case; see README
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 30
+      policies:
+        - type: Percent
+          value: 100
+          periodSeconds: 60
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+        - type: Pods
+          value: 1
+          periodSeconds: 120
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: iotaps-ws
+  labels:
+    app.kubernetes.io/name: iotaps
+    app.kubernetes.io/component: ws
+    app.kubernetes.io/part-of: iotaps
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: iotaps-ws
+  minReplicas: 2
+  maxReplicas: 4
+  metrics:
+    # CPU is a weak proxy for WebSocket load -- thousands of idle connections
+    # cost memory and file descriptors, not CPU -- so memory is weighted lower
+    # here and scale-down is slow. If connection count matters, expose it as a
+    # custom metric and scale on that instead.
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 75
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 60
+      policies:
+        - type: Pods
+          value: 1
+          periodSeconds: 60
+    scaleDown:
+      # Removing a WS pod disconnects every client on it, forcing a reconnect
+      # storm. Scale down slowly and only after a long quiet period.
+      stabilizationWindowSeconds: 900
+      policies:
+        - type: Pods
+          value: 1
+          periodSeconds: 300

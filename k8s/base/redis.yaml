@@ -1,0 +1,134 @@
+# Redis (Cache_Store): platform-settings cache, rate-limit token buckets,
+# telemetry ingest queue, sessions, quota counters, and the pub/sub fan-out that
+# feeds the WebSocket tier.
+#
+# Redis is a hard dependency of the WS tier -- cross-pod features (WebSocket
+# fan-out, forced disconnect, maintenance mode) are all Redis channels/keys, so
+# every pod must share one instance. Do not run a per-pod sidecar.
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: iotaps-redis
+  labels:
+    app.kubernetes.io/name: iotaps
+    app.kubernetes.io/component: redis
+    app.kubernetes.io/part-of: iotaps
+spec:
+  clusterIP: None
+  selector:
+    app.kubernetes.io/name: iotaps
+    app.kubernetes.io/component: redis
+  ports:
+    - name: redis
+      port: 6379
+      targetPort: redis
+      protocol: TCP
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: iotaps-redis
+  labels:
+    app.kubernetes.io/name: iotaps
+    app.kubernetes.io/component: redis
+    app.kubernetes.io/part-of: iotaps
+spec:
+  serviceName: iotaps-redis
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: iotaps
+      app.kubernetes.io/component: redis
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: iotaps
+        app.kubernetes.io/component: redis
+        app.kubernetes.io/part-of: iotaps
+    spec:
+      securityContext:
+        # Verified against redis:7-alpine: the `redis` user is uid 999 but
+        # gid 1000, not 999. fsGroup must match the gid or /data is not
+        # group-writable and the AOF file cannot be created.
+        runAsNonRoot: true
+        runAsUser: 999
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      terminationGracePeriodSeconds: 60 # let the final AOF fsync finish
+      containers:
+        - name: redis
+          image: redis:7-alpine
+          imagePullPolicy: IfNotPresent
+          # Wrapped in sh because Redis config files cannot read env vars, so
+          # the password has to be appended as a flag. `exec` keeps redis-server
+          # as PID 1 so it receives SIGTERM directly.
+          command: ["sh", "-c"]
+          args:
+            - exec redis-server /etc/redis/redis.conf --requirepass "$REDIS_PASSWORD"
+          ports:
+            - name: redis
+              containerPort: 6379
+              protocol: TCP
+          env:
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: iotaps-secrets
+                  key: REDIS_PASSWORD
+          volumeMounts:
+            - name: config
+              mountPath: /etc/redis
+              readOnly: true
+            - name: data
+              mountPath: /data
+          readinessProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                - redis-cli --no-auth-warning -a "$REDIS_PASSWORD" ping | grep -q PONG
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                - redis-cli --no-auth-warning -a "$REDIS_PASSWORD" ping | grep -q PONG
+            initialDelaySeconds: 30
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 3
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              # Headroom over the 512mb maxmemory in redis.conf for AOF buffers
+              # and copy-on-write during rewrites.
+              memory: 768Mi
+      volumes:
+        - name: config
+          configMap:
+            name: iotaps-redis-config
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+        labels:
+          app.kubernetes.io/name: iotaps
+          app.kubernetes.io/component: redis
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 8Gi

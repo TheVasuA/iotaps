@@ -6,6 +6,10 @@
 app/secrets/
 infra/nginx/certs/
 
+# Kubernetes secrets consumed by kustomize secretGenerator — never commit.
+# Use the secrets.env.example in each overlay as the template.
+k8s/overlays/*/secrets.env
+
 # Python
 __pycache__/
 *.py[cod]

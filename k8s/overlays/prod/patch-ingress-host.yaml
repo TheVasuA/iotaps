@@ -1,0 +1,49 @@
+# Real hostname and TLS issuer for both Ingresses.
+# Replace api.iotaps.example.com throughout, and keep PUBLIC_BASE_URL in
+# kustomization.yaml pointing at the same host.
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: iotaps-api
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+spec:
+  tls:
+    - hosts:
+        - api.iotaps.example.com
+      secretName: iotaps-api-tls
+  rules:
+    - host: api.iotaps.example.com
+      http:
+        paths:
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: iotaps-api
+                port:
+                  name: http
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: iotaps-ws
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+spec:
+  tls:
+    - hosts:
+        - api.iotaps.example.com
+      secretName: iotaps-api-tls
+  rules:
+    - host: api.iotaps.example.com
+      http:
+        paths:
+          - path: /ws
+            pathType: Exact
+            backend:
+              service:
+                name: iotaps-ws
+                port:
+                  name: http

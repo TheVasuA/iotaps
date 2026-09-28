@@ -1,0 +1,60 @@
+# Let's Encrypt ACME issuers.
+#
+# Cluster-scoped, and therefore deliberately NOT part of any overlay's
+# kustomization: these belong to the cluster alongside cert-manager and the
+# ingress controller, not to the application. Kustomize's namespace transformer
+# would also try to stamp a namespace onto them. Apply directly:
+#
+#   microk8s kubectl apply -f k8s/cluster-issuers.yaml
+#
+# Prerequisites for the HTTP-01 solver, all of which must hold for the hostname
+# being issued:
+#   1. it resolves publicly to this cluster's ingress
+#   2. port 80 reaches the ingress controller from the internet -- Let's Encrypt
+#      connects to http://<host>/.well-known/acme-challenge/<token>. If the
+#      controller is NodePort-only on :30080 with nothing forwarding :80, HTTP-01
+#      cannot work and you need the DNS-01 solver instead.
+#   3. nothing upstream intercepts that path
+#
+# ALWAYS validate with `letsencrypt-staging` first. Production allows only 5
+# failed validations per account/hostname per hour, and 50 certificates per
+# registered domain per week; a wrong annotation can exhaust that quickly.
+# Staging has far looser limits and issues an untrusted cert from a test CA,
+# which is enough to prove the challenge flow works.
+#
+# Change `email` to a real inbox -- Let's Encrypt sends expiry warnings there.
+---
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-staging
+spec:
+  acme:
+    server: https://acme-staging-v02.api.letsencrypt.org/directory
+    email: admin@iotaps.com
+    privateKeySecretRef:
+      # cert-manager stores the ACME account key here, in cert-manager's own
+      # namespace. Deleting it forces re-registration with the CA.
+      name: letsencrypt-staging-account-key
+    solvers:
+      - http01:
+          ingress:
+            # Must match the IngressClass serving the hostname, or cert-manager
+            # creates a solver Ingress no controller picks up and validation
+            # times out.
+            ingressClassName: nginx
+---
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-prod
+spec:
+  acme:
+    server: https://acme-v02.api.letsencrypt.org/directory
+    email: admin@iotaps.com
+    privateKeySecretRef:
+      name: letsencrypt-prod-account-key
+    solvers:
+      - http01:
+          ingress:
+            ingressClassName: nginx

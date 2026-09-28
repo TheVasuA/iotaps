@@ -1,0 +1,40 @@
+# Root path -> SPA.
+#
+# A third Ingress object for the same host, alongside iotaps-api (/api, 60s
+# timeouts) and iotaps-ws (/ws, 3600s timeouts). Separate objects because
+# ingress-nginx applies timeout annotations per-Ingress, not per-path.
+#
+# Path precedence is not ambiguous: ingress-nginx sorts by descending specificity,
+# so /api (Prefix) and /ws (Exact) are matched before this catch-all /.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: iotaps-web
+  labels:
+    app.kubernetes.io/name: iotaps
+    app.kubernetes.io/component: web
+    app.kubernetes.io/part-of: iotaps
+  annotations:
+    # Static assets only; the SPA makes its own XHRs to /api.
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "30"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "30"
+    # Same issuer and secret as the /api and /ws Ingresses -- one hostname, one
+    # certificate. See patch-dev-ingress.yaml.
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - dev.iotaps.com
+      secretName: iotaps-dev-tls
+  rules:
+    - host: dev.iotaps.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: iotaps-web
+                port:
+                  name: http

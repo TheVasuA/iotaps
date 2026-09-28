@@ -1,0 +1,60 @@
+# Device-facing MQTT endpoint for a single-node dev cluster.
+#
+# ############################################################################
+# # NOT IN THE KUSTOMIZATION BY DEFAULT -- READ THIS FIRST.                  #
+# ############################################################################
+# A dev cluster has no MetalLB, so `type: LoadBalancer` would sit <pending>
+# forever. NodePort is the way to reach the broker from outside on a single node:
+# devices connect to <node-ip>:31883.
+#
+# SECURITY: the broker sets `allow_anonymous true` and enforces no topic ACLs
+# (see base/config/mosquitto.conf). A NodePort binds on EVERY node interface,
+# including any public one, and Kubernetes does not filter it. On a host with no
+# firewall this publishes an unauthenticated MQTT broker to the internet --
+# anyone who finds the port can read every org's telemetry and publish commands
+# to any device.
+#
+# Before enabling, do one of:
+#   * firewall the port to known device networks, e.g.
+#       ufw allow from 203.0.113.0/24 to any port 31883 proto tcp
+#       ufw deny 31883/tcp
+#   * keep the dev cluster on a private network or behind a VPN
+#   * add broker authentication and set allow_anonymous false
+#
+# If you only need in-cluster MQTT (device_simulator, the mqtt_listener worker,
+# or a test pod), you do not need this file at all -- the ClusterIP Service in
+# base/mosquitto.yaml already covers that. For occasional manual testing from
+# your laptop, prefer a port-forward, which binds to localhost only:
+#
+#   kubectl -n iotaps port-forward svc/iotaps-mosquitto 1883:1883
+#
+# To enable, uncomment the mosquitto-nodeport.yaml line in kustomization.yaml.
+#
+# NOTE: 1883 itself cannot be used as a nodePort -- the default allowed range is
+# 30000-32767. Changing that needs --service-node-port-range on the API server.
+apiVersion: v1
+kind: Service
+metadata:
+  name: iotaps-mosquitto-nodeport
+  labels:
+    app.kubernetes.io/name: iotaps
+    app.kubernetes.io/component: mosquitto
+    app.kubernetes.io/part-of: iotaps
+spec:
+  type: NodePort
+  selector:
+    app.kubernetes.io/name: iotaps
+    app.kubernetes.io/component: mosquitto
+  ports:
+    - name: mqtt
+      port: 1883
+      targetPort: mqtt
+      nodePort: 31883
+      protocol: TCP
+    # MQTT-over-WebSocket, only needed if browser clients talk to the broker
+    # directly. The IoTAPS frontend uses the app's own /ws gateway instead.
+    # - name: mqtt-ws
+    #   port: 9001
+    #   targetPort: mqtt-ws
+    #   nodePort: 31901
+    #   protocol: TCP

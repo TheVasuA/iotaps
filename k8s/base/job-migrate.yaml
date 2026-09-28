@@ -1,0 +1,119 @@
+# Alembic schema migration.
+#
+# Runs `alembic upgrade head` once per deploy. This is deliberately a Job and
+# not an initContainer on the app Deployments: an initContainer would run on
+# every replica, so N pods would race on the same migration. The app pods
+# instead wait for this Job's result via their own wait-for-migrations
+# initContainer (see api.yaml / ws.yaml / workers.yaml).
+#
+# Job specs are immutable, so re-running after a code change needs a fresh Job.
+# Either delete it first (`kubectl -n iotaps delete job iotaps-migrate`) or let
+# the name suffix change with the image tag. `kubectl apply -k` on an unchanged
+# Job is a no-op, which is why ttlSecondsAfterFinished cleans it up instead.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: iotaps-migrate
+  labels:
+    app.kubernetes.io/name: iotaps
+    app.kubernetes.io/component: migrate
+    app.kubernetes.io/part-of: iotaps
+  annotations:
+    # If you install this via Helm or Argo CD, these hint at pre-deploy ordering.
+    argocd.argoproj.io/hook: PreSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+spec:
+  backoffLimit: 3
+  # Garbage-collect the Job (and its pod) an hour after it finishes, so the next
+  # deploy can create a new one with the same name.
+  ttlSecondsAfterFinished: 3600
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: iotaps
+        app.kubernetes.io/component: migrate
+        app.kubernetes.io/part-of: iotaps
+    spec:
+      restartPolicy: Never
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+        # Wait for Postgres to accept connections. pg_isready ships in the app
+        # image (postgresql-client-16 is installed for the pg_dump backup
+        # feature), so no extra image is needed.
+        - name: wait-for-postgres
+          image: iotaps/api:latest
+          imagePullPolicy: IfNotPresent
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              set -eu
+              # pg_isready cannot parse the SQLAlchemy driver suffix.
+              url=$(printf '%s' "$DATABASE_URL" | sed -e 's#+asyncpg##' -e 's#+psycopg2##')
+              until pg_isready -d "$url" -t 3 >/dev/null 2>&1; do
+                echo "waiting for postgres..."
+                sleep 2
+              done
+              echo "postgres is ready"
+          env:
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef: { name: iotaps-secrets, key: POSTGRES_USER }
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: iotaps-secrets, key: POSTGRES_PASSWORD }
+            - name: POSTGRES_DB
+              valueFrom:
+                secretKeyRef: { name: iotaps-secrets, key: POSTGRES_DB }
+            - name: DATABASE_URL
+              value: postgresql+asyncpg://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@iotaps-postgres:5432/$(POSTGRES_DB)
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+          resources:
+            requests: { cpu: 50m, memory: 64Mi }
+            limits: { memory: 256Mi }
+      containers:
+        - name: alembic
+          image: iotaps/api:latest
+          imagePullPolicy: IfNotPresent
+          # alembic.ini sets `script_location = alembic` (relative), so the
+          # working directory has to be the one holding alembic.ini.
+          workingDir: /srv/app
+          command: ["alembic", "upgrade", "head"]
+          env:
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef: { name: iotaps-secrets, key: POSTGRES_USER }
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: iotaps-secrets, key: POSTGRES_PASSWORD }
+            - name: POSTGRES_DB
+              valueFrom:
+                secretKeyRef: { name: iotaps-secrets, key: POSTGRES_DB }
+            # alembic/env.py reads DATABASE_URL directly and rewrites the async
+            # driver to psycopg2, so the same URL works for app and migrations.
+            - name: DATABASE_URL
+              value: postgresql+asyncpg://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@iotaps-postgres:5432/$(POSTGRES_DB)
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              memory: 512Mi
+      volumes:
+        - name: tmp
+          emptyDir: {}

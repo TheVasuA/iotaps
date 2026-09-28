@@ -1,0 +1,168 @@
+# PostgreSQL + TimescaleDB (Relational_DB + Time_Series_DB).
+#
+# In-cluster single instance, matching the Compose stack. There is no
+# replication or automated failover here: a node loss means downtime until the
+# pod is rescheduled and its volume reattached. For production consider either a
+# managed TimescaleDB/Postgres service or an operator (CloudNativePG, Zalando)
+# instead -- to swap, delete this file from the kustomization and point
+# DATABASE_URL in secrets.env at the external host.
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: iotaps-postgres
+  labels:
+    app.kubernetes.io/name: iotaps
+    app.kubernetes.io/component: postgres
+    app.kubernetes.io/part-of: iotaps
+spec:
+  # Headless: clients resolve the pod directly, no kube-proxy hop for a
+  # single-instance database.
+  clusterIP: None
+  selector:
+    app.kubernetes.io/name: iotaps
+    app.kubernetes.io/component: postgres
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: postgres
+      protocol: TCP
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: iotaps-postgres
+  labels:
+    app.kubernetes.io/name: iotaps
+    app.kubernetes.io/component: postgres
+    app.kubernetes.io/part-of: iotaps
+spec:
+  serviceName: iotaps-postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: iotaps
+      app.kubernetes.io/component: postgres
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: iotaps
+        app.kubernetes.io/component: postgres
+        app.kubernetes.io/part-of: iotaps
+    spec:
+      # No pod-level runAsUser: the upstream entrypoint intentionally starts as
+      # root to chown PGDATA, then drops to the postgres user itself. Forcing
+      # runAsNonRoot here breaks first-boot initdb.
+      securityContext:
+        fsGroup: 70 # `postgres` group in the Alpine-based Timescale image
+      terminationGracePeriodSeconds: 120 # allow a clean shutdown checkpoint
+      containers:
+        - name: postgres
+          image: timescale/timescaledb:2.17.2-pg16
+          imagePullPolicy: IfNotPresent
+          # `args` replaces the image CMD but keeps its ENTRYPOINT
+          # (docker-entrypoint.sh), so initdb still runs on an empty volume.
+          # shared_preload_libraries is deliberately not overridden -- the image
+          # already sets it to timescaledb and -c would clobber that.
+          args:
+            - postgres
+            # One API/WS/worker process can hold up to 30 connections
+            # (pool_size 10 + max_overflow 20). Default max_connections=100 is
+            # not enough for even one API pod. See k8s/README.md for the math.
+            - -c
+            - max_connections=300
+            - -c
+            - shared_buffers=1GB
+            - -c
+            - effective_cache_size=3GB
+            - -c
+            - work_mem=8MB
+            - -c
+            - maintenance_work_mem=256MB
+            - -c
+            - max_wal_size=4GB
+          ports:
+            - name: postgres
+              containerPort: 5432
+              protocol: TCP
+          env:
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: iotaps-secrets
+                  key: POSTGRES_USER
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: iotaps-secrets
+                  key: POSTGRES_PASSWORD
+            - name: POSTGRES_DB
+              valueFrom:
+                secretKeyRef:
+                  name: iotaps-secrets
+                  key: POSTGRES_DB
+            # PGDATA must be a subdirectory of the mount: a fresh PVC contains
+            # lost+found, and initdb refuses to run in a non-empty directory.
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+            # Skip the interactive timescaledb-tune prompt on first boot; the
+            # -c flags above are the tuning.
+            - name: TIMESCALEDB_TELEMETRY
+              value: "off"
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+          readinessProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                - exec pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB" -h 127.0.0.1
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6
+          livenessProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                - exec pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB" -h 127.0.0.1
+            initialDelaySeconds: 60
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 6
+          # First boot runs initdb plus the TimescaleDB extension setup, which
+          # can take a while on slow storage. The startup probe gives it up to
+          # 5 minutes before the liveness probe starts killing the pod.
+          startupProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                - exec pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB" -h 127.0.0.1
+            periodSeconds: 5
+            timeoutSeconds: 5
+            failureThreshold: 60
+          resources:
+            requests:
+              cpu: 500m
+              memory: 1Gi
+            limits:
+              # Must exceed shared_buffers + (max_connections * work_mem) with
+              # headroom, or the kernel OOM-kills the postmaster.
+              memory: 4Gi
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+        labels:
+          app.kubernetes.io/name: iotaps
+          app.kubernetes.io/component: postgres
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        # storageClassName is intentionally unset so the cluster default is
+        # used. Override it in an overlay, and prefer an SSD-backed class:
+        # TimescaleDB inserts are write-heavy.
+        resources:
+          requests:
+            storage: 50Gi

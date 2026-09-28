@@ -1,0 +1,136 @@
+# Namespace network isolation -- OPTIONAL, NOT APPLIED BY DEFAULT.
+#
+# This file is intentionally left out of base/kustomization.yaml. Read this
+# before enabling it:
+#
+#   1. Your CNI must enforce NetworkPolicy (Calico, Cilium, Antrea, Weave).
+#      Under flannel or a plain kubenet cluster these objects are accepted by the
+#      API server and silently do nothing, which is worse than not having them
+#      because it looks like isolation exists.
+#   2. Some CNIs subject kubelet health probes to ingress rules. If you enable
+#      the default-deny policy and pods start failing readiness, that is the
+#      cause -- add an allow rule for your node CIDR.
+#   3. The rules below assume ingress-nginx runs in a namespace labelled
+#      `kubernetes.io/metadata.name: ingress-nginx`. That label is applied
+#      automatically by Kubernetes >= 1.21. Adjust if your controller lives
+#      elsewhere.
+#
+# To enable, uncomment the networkpolicy.yaml line in base/kustomization.yaml (or
+# add it to an overlay's resources) and verify probes still pass.
+---
+# Deny all ingress in the namespace, then re-allow explicitly below.
+# Egress is left unrestricted: the app makes outbound calls to Razorpay, Google
+# OAuth token verification, SMTP, Firebase, MongoDB Atlas and arbitrary
+# user-configured webhook URLs, so an egress allowlist would need to cover all
+# of those and is better handled per-destination than here.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-ingress
+  labels:
+    app.kubernetes.io/name: iotaps
+    app.kubernetes.io/part-of: iotaps
+spec:
+  podSelector: {} # every pod in the namespace
+  policyTypes:
+    - Ingress
+---
+# The ingress controller may reach the API and WS tiers.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-ingress-controller-to-http
+  labels:
+    app.kubernetes.io/name: iotaps
+    app.kubernetes.io/part-of: iotaps
+spec:
+  podSelector:
+    matchExpressions:
+      - key: app.kubernetes.io/component
+        operator: In
+        values: ["api", "ws"]
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+      ports:
+        - protocol: TCP
+          port: 8000
+        - protocol: TCP
+          port: 8001
+---
+# Only IoTAPS pods may talk to Postgres.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-app-to-postgres
+  labels:
+    app.kubernetes.io/name: iotaps
+    app.kubernetes.io/part-of: iotaps
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/component: postgres
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/part-of: iotaps
+      ports:
+        - protocol: TCP
+          port: 5432
+---
+# Only IoTAPS pods may talk to Redis.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-app-to-redis
+  labels:
+    app.kubernetes.io/name: iotaps
+    app.kubernetes.io/part-of: iotaps
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/component: redis
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/part-of: iotaps
+      ports:
+        - protocol: TCP
+          port: 6379
+---
+# Mosquitto is device-facing, so ingress cannot be restricted to in-cluster
+# sources -- devices connect from the public internet through the LoadBalancer.
+# This rule is therefore wide open on 1883/9001 and provides no protection; it
+# exists only so the default-deny policy above does not break device traffic.
+# The broker itself allows anonymous connections and enforces no topic ACLs, so
+# port 1883 is effectively unauthenticated. Restrict it at the load balancer
+# (source IP allowlist) or add broker authentication. See k8s/README.md.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-devices-to-mosquitto
+  labels:
+    app.kubernetes.io/name: iotaps
+    app.kubernetes.io/part-of: iotaps
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/component: mosquitto
+  policyTypes:
+    - Ingress
+  ingress:
+    - ports:
+        - protocol: TCP
+          port: 1883
+        - protocol: TCP
+          port: 9001

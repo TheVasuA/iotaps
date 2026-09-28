@@ -1,0 +1,97 @@
+# HTTP ingress for the REST API and the WebSocket gateway.
+#
+# Two Ingress objects rather than one with two paths, because nginx-ingress
+# timeout annotations apply per-Ingress, not per-path. The API wants a 60s read
+# timeout; a WebSocket needs an hour. Sharing one object would force the API to
+# inherit the WS timeout and let a hung request occupy a worker for an hour.
+# ingress-nginx merges Ingresses that share a host into one server block, so the
+# split is invisible to clients.
+#
+# Assumes ingress-nginx. On another controller, translate the annotations:
+#   Traefik       -> middlewares / serversTransport
+#   AWS ALB       -> alb.ingress.kubernetes.io/* (idle_timeout.timeout_seconds)
+#   GKE / GCE     -> BackendConfig with timeoutSec
+#
+# The SPA is not served here. Per DEPLOY.md the frontend is built and hosted by
+# Cloudflare Pages, so only /api and /ws are routed into the cluster.
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: iotaps-api
+  labels:
+    app.kubernetes.io/name: iotaps
+    app.kubernetes.io/component: api
+    app.kubernetes.io/part-of: iotaps
+  annotations:
+    # Matches gunicorn's --timeout 60 on this tier.
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "60"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "60"
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "10"
+    # POST /api/v1/admin/platform/restore accepts a database dump upload.
+    nginx.ingress.kubernetes.io/proxy-body-size: 25m
+    # Uncomment once cert-manager is installed and a ClusterIssuer of this name
+    # exists (see k8s/cluster-issuers.yaml). Until then the tls block below
+    # references a secret nothing creates, and the controller logs a
+    # missing-secret error every few seconds. Both overlays set this themselves.
+    # cert-manager.io/cluster-issuer: letsencrypt-prod
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - api.iotaps.example.com
+      secretName: iotaps-api-tls
+  rules:
+    - host: api.iotaps.example.com
+      http:
+        paths:
+          # Covers the whole v1 surface including /api/v1/docs and
+          # /api/v1/openapi.json.
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: iotaps-api
+                port:
+                  name: http
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: iotaps-ws
+  labels:
+    app.kubernetes.io/name: iotaps
+    app.kubernetes.io/component: ws
+    app.kubernetes.io/part-of: iotaps
+  annotations:
+    # An idle WebSocket must survive between messages. Anything shorter and the
+    # proxy silently closes live dashboards.
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "10"
+    # ingress-nginx forwards Upgrade/Connection headers automatically; this only
+    # pins HTTP/1.1, which the handshake requires.
+    nginx.ingress.kubernetes.io/proxy-http-version: "1.1"
+    # No session affinity on purpose: WebSocket fan-out state lives in Redis
+    # pub/sub and each connection re-subscribes on connect, so any pod can serve
+    # any client.
+    # cert-manager.io/cluster-issuer: letsencrypt-prod
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - api.iotaps.example.com
+      secretName: iotaps-api-tls
+  rules:
+    - host: api.iotaps.example.com
+      http:
+        paths:
+          # app/main.py mounts the WebSocket router at the root, so the path is
+          # /ws and not /api/v1/ws. Exact match keeps it off the API backend.
+          - path: /ws
+            pathType: Exact
+            backend:
+              service:
+                name: iotaps-ws
+                port:
+                  name: http

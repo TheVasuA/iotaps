@@ -1,0 +1,78 @@
+# Dev ingress: real hostname with a Let's Encrypt certificate.
+#
+# Host
+# ----
+# dev.iotaps.com. Keep PUBLIC_BASE_URL in patch-dev-config.yaml in step with this
+# and with the scheme -- it feeds emailed links, public dashboard URLs and webhook
+# callbacks, so a mismatch yields links that 404 rather than an obvious error.
+#
+# TLS
+# ---
+# cert-manager watches the `cert-manager.io/cluster-issuer` annotation, requests a
+# certificate for the hosts in `tls.hosts`, and writes it to `tls.secretName`. The
+# base manifests reference `iotaps-api-tls` but leave the annotation commented
+# out, so the secret never materialises and the controller logs a missing-secret
+# error; setting the annotation here is what completes it.
+#
+# All three Ingresses share ONE secret (`iotaps-dev-tls`) because they serve one
+# hostname. cert-manager de-duplicates: the first to request it creates the
+# Certificate, the rest reuse the secret. Pointing them at different secret names
+# would issue three certificates for the same name and burn rate limit.
+#
+# The issuer is switched between `letsencrypt-prod` and `letsencrypt-prod`
+# here. Validate with staging after any routing change -- production permits only
+# 5 failed validations per hostname per hour. See k8s/cluster-issuers.yaml.
+#
+# ingress-nginx adds an automatic HTTP->HTTPS 308 redirect once TLS is present.
+# That is wanted: it also means a ws:// client gets redirected, and the SPA
+# derives wss:// from the page origin, so everything ends up on TLS.
+#
+# Rules are restated in full rather than merged: a strategic-merge patch on a
+# list appends rather than retargets, which would leave the placeholder host in
+# place alongside the real one.
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: iotaps-api
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+spec:
+  tls:
+    - hosts:
+        - dev.iotaps.com
+      secretName: iotaps-dev-tls
+  rules:
+    - host: dev.iotaps.com
+      http:
+        paths:
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: iotaps-api
+                port:
+                  name: http
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: iotaps-ws
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+spec:
+  tls:
+    - hosts:
+        - dev.iotaps.com
+      secretName: iotaps-dev-tls
+  rules:
+    - host: dev.iotaps.com
+      http:
+        paths:
+          - path: /ws
+            pathType: Exact
+            backend:
+              service:
+                name: iotaps-ws
+                port:
+                  name: http

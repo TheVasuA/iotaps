@@ -1,0 +1,30 @@
+# Development configuration overrides.
+#
+# Single gunicorn worker per tier keeps the Postgres connection count low: one
+# worker is one 30-connection pool, so the whole dev stack stays well under the
+# default max_connections.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: iotaps-config
+data:
+  APP_ENV: development
+  APP_DEBUG: "true"
+  API_WORKERS: "1"
+  WS_WORKERS: "1"
+
+  # Must match the Ingress host in patch-dev-ingress.yaml. The ingress controller
+  # holds hostPort 80, so no port suffix is needed here. If you ever move it back
+  # to NodePort-only (see k8s/README.md "Sharing a host with an existing web
+  # server"), this has to become http://dev.iotaps.com:30080 or every generated
+  # link breaks -- it feeds emailed links, public dashboard URLs and webhook
+  # callbacks.
+  PUBLIC_BASE_URL: http://dev.iotaps.com
+
+  # Explicit origins rather than "*": the app sets allow_credentials=True, and
+  # browsers reject a wildcard on credentialed requests, which would silently
+  # break the SPA's authenticated calls. The :30080 form is kept because the
+  # NodePort still works alongside hostPort 80.
+  CORS_ALLOW_ORIGINS: http://dev.iotaps.com,https://dev.iotaps.com,http://dev.iotaps.com:30080,http://localhost:5173
+
+  SUPERADMIN_EMAIL: admin@dev.iotaps.com

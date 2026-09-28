@@ -1,0 +1,50 @@
+# Production overlay.
+#
+#   cp secrets.env.example secrets.env   # then fill it in
+#   kubectl apply -k k8s/overlays/prod
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: iotaps
+
+resources:
+  - ../../base
+  # Device-facing MQTT endpoint. Only prod gets a cloud load balancer; in dev it
+  # would either cost money or stay <pending> forever.
+  - mosquitto-lb.yaml
+
+secretGenerator:
+  - name: iotaps-secrets
+    envs:
+      - secrets.env
+
+# Pin a registry and an immutable tag. `latest` is fine for Compose on a single
+# VPS where the image is built in place, but in a cluster it makes rollouts
+# non-deterministic: nodes pull at different times and a restart can silently
+# change the running code. Replace the newTag with the CI build's git SHA.
+images:
+  - name: iotaps/api
+    newName: ghcr.io/REPLACE_ME/iotaps-api
+    newTag: REPLACE_ME_git_sha
+
+patches:
+  # Point the platform at the real hostname. This value ends up in emails,
+  # public dashboard links and the Razorpay webhook URL.
+  - target:
+      kind: ConfigMap
+      name: iotaps-config
+    patch: |-
+      - op: replace
+        path: /data/PUBLIC_BASE_URL
+        value: https://api.iotaps.example.com
+      # Lock CORS down to the real frontend origins; "*" plus
+      # allow_credentials=True is rejected by browsers anyway.
+      - op: replace
+        path: /data/CORS_ALLOW_ORIGINS
+        value: https://iotaps.example.com,https://www.iotaps.example.com
+      - op: replace
+        path: /data/SUPERADMIN_EMAIL
+        value: admin@iotaps.example.com
+
+  - path: patch-ingress-host.yaml
+  - path: patch-storage.yaml

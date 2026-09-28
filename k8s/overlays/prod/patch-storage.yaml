@@ -1,0 +1,55 @@
+# Production storage sizing and class.
+#
+# volumeClaimTemplates are immutable once a StatefulSet exists: these values
+# only take effect on a first install. To grow an existing volume, edit the PVC
+# directly (if the StorageClass has allowVolumeExpansion: true) rather than
+# changing this file.
+#
+# Replace `fast-ssd` with a class that exists in your cluster
+# (`kubectl get storageclass`). TimescaleDB is write-heavy, so an SSD-backed
+# class matters more here than capacity.
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: iotaps-postgres
+spec:
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        storageClassName: fast-ssd
+        resources:
+          requests:
+            storage: 200Gi
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: iotaps-redis
+spec:
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        storageClassName: fast-ssd
+        resources:
+          requests:
+            storage: 16Gi
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: iotaps-mosquitto
+spec:
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        storageClassName: fast-ssd
+        resources:
+          requests:
+            storage: 10Gi

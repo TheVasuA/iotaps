@@ -1,0 +1,58 @@
+# IoTAPS backend -- Kustomize base.
+#
+# Do not apply this directly; it has no Secret. Use an overlay:
+#   kubectl apply -k k8s/overlays/dev
+#   kubectl apply -k k8s/overlays/prod
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: iotaps
+
+resources:
+  - namespace.yaml
+  # Stateful dependencies
+  - postgres.yaml
+  - redis.yaml
+  - mosquitto.yaml
+  # Schema migration (runs before the app tiers become ready)
+  - job-migrate.yaml
+  # Application tiers
+  - api.yaml
+  - ws.yaml
+  - workers.yaml
+  # Traffic and availability
+  - ingress.yaml
+  - hpa.yaml
+  - pdb.yaml
+  # Namespace isolation. Read the header of this file before enabling: it is a
+  # no-op on CNIs that do not enforce NetworkPolicy, and some CNIs subject
+  # health probes to it.
+  # - networkpolicy.yaml
+
+configMapGenerator:
+  # Application settings consumed via envFrom by api/ws/workers.
+  - name: iotaps-config
+    envs:
+      - config/app.env
+  # Mounted at /etc/supervisor/supervisord.conf in the workers pod. This is the
+  # Kubernetes copy of infra/supervisor/supervisord.conf -- keep the program list
+  # in sync when workers are added or removed.
+  - name: iotaps-supervisor-config
+    files:
+      - config/supervisord.conf
+  - name: iotaps-redis-config
+    files:
+      - config/redis.conf
+  # Kubernetes copy of infra/mosquitto/mosquitto.conf.
+  - name: iotaps-mosquitto-config
+    files:
+      - config/mosquitto.conf
+
+# Generated names carry a content hash, so editing any config file above
+# produces a new ConfigMap name and rolls the dependent pods automatically.
+# Kustomize rewrites every configMapRef/secretKeyRef to match.
+generatorOptions:
+  disableNameSuffixHash: false
+
+# The image is referenced as iotaps/api:latest in every manifest. Overlays pin a
+# real registry and an immutable tag via the `images:` field.

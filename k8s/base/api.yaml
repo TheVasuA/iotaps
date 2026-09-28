@@ -1,0 +1,254 @@
+# REST API tier -- gunicorn + uvicorn workers serving app.main:app on :8000.
+#
+# Stateless and horizontally scalable (see hpa.yaml). Shares the image and the
+# ASGI app with the WS tier; only the gunicorn tuning differs. The split exists
+# so thousands of long-lived WebSocket connections cannot starve short REST
+# requests of worker slots.
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: iotaps-api
+  labels:
+    app.kubernetes.io/name: iotaps
+    app.kubernetes.io/component: api
+    app.kubernetes.io/part-of: iotaps
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: iotaps
+    app.kubernetes.io/component: api
+  ports:
+    - name: http
+      port: 8000
+      targetPort: http
+      protocol: TCP
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: iotaps-api
+  labels:
+    app.kubernetes.io/name: iotaps
+    app.kubernetes.io/component: api
+    app.kubernetes.io/part-of: iotaps
+spec:
+  replicas: 2
+  revisionHistoryLimit: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: iotaps
+      app.kubernetes.io/component: api
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: iotaps
+        app.kubernetes.io/component: api
+        app.kubernetes.io/part-of: iotaps
+    spec:
+      securityContext:
+        # The image ships no USER directive, so it would otherwise run as root.
+        # uid 1000 works because site-packages and /srv are world-readable, and
+        # PYTHONDONTWRITEBYTECODE=1 keeps Python from writing .pyc files.
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      # Matches gunicorn's --graceful-timeout 30 plus scheduling slack.
+      terminationGracePeriodSeconds: 60
+      # Best-effort spread so a single node loss cannot take out every replica.
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: iotaps
+              app.kubernetes.io/component: api
+      initContainers:
+        # Gate startup on the schema being present. The app's lifespan hook
+        # seeds the super admin and the default template catalog on every boot;
+        # those writes are wrapped in try/except, so without this gate a pod
+        # that starts before job-migrate finishes comes up with no super admin
+        # and only logs a warning.
+        - name: wait-for-migrations
+          image: iotaps/api:latest
+          imagePullPolicy: IfNotPresent
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              set -eu
+              # psql/pg_isready cannot parse the SQLAlchemy driver suffix.
+              url=$(printf '%s' "$DATABASE_URL" | sed -e 's#+asyncpg##' -e 's#+psycopg2##')
+              until pg_isready -d "$url" -t 3 >/dev/null 2>&1; do
+                echo "waiting for postgres..."
+                sleep 2
+              done
+              until psql "$url" -tAc 'select 1 from alembic_version limit 1' >/dev/null 2>&1; do
+                echo "waiting for alembic migrations..."
+                sleep 3
+              done
+              echo "database ready"
+          env:
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef: { name: iotaps-secrets, key: POSTGRES_USER }
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: iotaps-secrets, key: POSTGRES_PASSWORD }
+            - name: POSTGRES_DB
+              valueFrom:
+                secretKeyRef: { name: iotaps-secrets, key: POSTGRES_DB }
+            - name: DATABASE_URL
+              value: postgresql+asyncpg://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@iotaps-postgres:5432/$(POSTGRES_DB)
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+          resources:
+            requests: { cpu: 50m, memory: 64Mi }
+            limits: { memory: 256Mi }
+      containers:
+        - name: api
+          image: iotaps/api:latest
+          imagePullPolicy: IfNotPresent
+          workingDir: /srv # PYTHONPATH=/srv, package at /srv/app
+          # Wrapped in sh so API_WORKERS stays env-driven the way the Compose
+          # command is. `exec` keeps gunicorn as PID 1 so it gets SIGTERM.
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              exec gunicorn app.main:app \
+                --worker-class uvicorn.workers.UvicornWorker \
+                --workers "${API_WORKERS:-2}" \
+                --bind 0.0.0.0:8000 \
+                --timeout 60 \
+                --graceful-timeout 30 \
+                --max-requests 2000 \
+                --max-requests-jitter 200 \
+                --worker-tmp-dir /dev/shm \
+                --access-logfile - \
+                --error-logfile -
+          ports:
+            - name: http
+              containerPort: 8000
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: iotaps-config
+          env:
+            # DATABASE_URL and REDIS_URL are assembled from the component
+            # secrets via Kubernetes $(VAR) interpolation so the URL can never
+            # drift from the password the database is actually using.
+            # Caveat: the passwords must be URL-safe. A password containing
+            # @ : / ? # or % breaks the URL -- either use an alphanumeric
+            # password or set DATABASE_URL / REDIS_URL explicitly instead.
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef: { name: iotaps-secrets, key: POSTGRES_USER }
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: iotaps-secrets, key: POSTGRES_PASSWORD }
+            - name: POSTGRES_DB
+              valueFrom:
+                secretKeyRef: { name: iotaps-secrets, key: POSTGRES_DB }
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: iotaps-secrets, key: REDIS_PASSWORD }
+            - name: DATABASE_URL
+              value: postgresql+asyncpg://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@iotaps-postgres:5432/$(POSTGRES_DB)
+            - name: REDIS_URL
+              value: redis://:$(REDIS_PASSWORD)@iotaps-redis:6379/0
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef: { name: iotaps-secrets, key: JWT_SECRET }
+            # Optional integrations. A missing key leaves the setting at its
+            # empty default, which disables the feature rather than failing.
+            - name: SUPERADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: iotaps-secrets, key: SUPERADMIN_PASSWORD, optional: true }
+            - name: RAZORPAY_KEY_ID
+              valueFrom:
+                secretKeyRef: { name: iotaps-secrets, key: RAZORPAY_KEY_ID, optional: true }
+            - name: RAZORPAY_KEY_SECRET
+              valueFrom:
+                secretKeyRef: { name: iotaps-secrets, key: RAZORPAY_KEY_SECRET, optional: true }
+            - name: RAZORPAY_WEBHOOK_SECRET
+              valueFrom:
+                secretKeyRef: { name: iotaps-secrets, key: RAZORPAY_WEBHOOK_SECRET, optional: true }
+            - name: SMTP_USERNAME
+              valueFrom:
+                secretKeyRef: { name: iotaps-secrets, key: SMTP_USERNAME, optional: true }
+            - name: SMTP_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: iotaps-secrets, key: SMTP_PASSWORD, optional: true }
+            - name: MONGODB_URI
+              valueFrom:
+                secretKeyRef: { name: iotaps-secrets, key: MONGODB_URI, optional: true }
+          volumeMounts:
+            # tempfile.mkstemp() is used by the admin backup-download and
+            # restore endpoints, and the root filesystem is read-only.
+            - name: tmp
+              mountPath: /tmp
+            # POST /api/v1/admin/platform/backup runs pg_dump into this path.
+            # emptyDir means dumps are lost when the pod restarts -- fine for
+            # the download-a-dump workflow, but do not treat it as backup
+            # storage. Real backups belong off-cluster (see infra/scripts).
+            - name: backups
+              mountPath: /srv/backups
+          # /api/v1/health is unauthenticated and exempt from rate limiting.
+          # Note it returns HTTP 200 even when it reports "degraded", so this
+          # verifies the event loop is responsive, not that Redis is healthy.
+          # Readiness therefore will not pull a pod out of rotation on a Redis
+          # outage; alert on the response body instead.
+          startupProbe:
+            httpGet:
+              path: /api/v1/health
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 5
+            failureThreshold: 30 # up to ~2.5 min for a cold start
+          readinessProbe:
+            httpGet:
+              path: /api/v1/health
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /api/v1/health
+              port: http
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+              ephemeral-storage: 1Gi
+            limits:
+              # Compose caps this tier at 1g; keep the two in step.
+              memory: 1Gi
+              # Must be >= the sum of the emptyDir sizeLimits below (2Gi + 4Gi),
+              # otherwise the pod is evicted for exceeding ephemeral storage
+              # before either volume hits its own limit.
+              ephemeral-storage: 6Gi
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 2Gi
+        - name: backups
+          emptyDir:
+            sizeLimit: 4Gi

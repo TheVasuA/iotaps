@@ -1,0 +1,100 @@
+# Shrink requests so the whole stack fits on a laptop-sized cluster.
+# Limits are left generous enough that nothing gets OOM-killed while debugging.
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: iotaps-postgres
+spec:
+  template:
+    spec:
+      containers:
+        - name: postgres
+          # Dev has far fewer clients, so the prod tuning is oversized -- and
+          # shared_buffers=1GB would not even fit the reduced memory limit.
+          args:
+            - postgres
+            - -c
+            - max_connections=100
+            - -c
+            - shared_buffers=128MB
+            - -c
+            - effective_cache_size=512MB
+            - -c
+            - work_mem=4MB
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              memory: 1Gi
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: iotaps-redis
+spec:
+  template:
+    spec:
+      containers:
+        - name: redis
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              memory: 256Mi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: iotaps-api
+spec:
+  template:
+    spec:
+      containers:
+        - name: api
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+              ephemeral-storage: 256Mi
+            limits:
+              memory: 768Mi
+              ephemeral-storage: 2Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: iotaps-ws
+spec:
+  template:
+    spec:
+      containers:
+        - name: ws
+          resources:
+            requests:
+              cpu: 50m
+              memory: 192Mi
+            limits:
+              memory: 512Mi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: iotaps-workers
+spec:
+  template:
+    spec:
+      containers:
+        - name: workers
+          resources:
+            requests:
+              # Measured on MicroK8s: 11 idle Python interpreters sit at ~48m
+              # CPU and ~500Mi RSS. The memory request is set above that so the
+              # pod is not first in line for eviction under node pressure --
+              # 384Mi (below actual usage) made it an easy target.
+              cpu: 100m
+              memory: 512Mi
+            limits:
+              memory: 1Gi

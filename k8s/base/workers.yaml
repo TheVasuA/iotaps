@@ -1,0 +1,218 @@
+# Background worker tier -- 11 long-running workers under supervisord.
+#
+# ############################################################################
+# # DO NOT SCALE THIS DEPLOYMENT PAST 1 REPLICA.                             #
+# ############################################################################
+# Every program in supervisord.conf is a singleton:
+#   * mqtt_listener holds a wildcard MQTT subscription across all orgs, so a
+#     second replica would ingest every telemetry message twice
+#   * batch_writer drains a shared Redis ingest queue
+#   * downsampler / data_retention / subscription_expiry / stats_publisher /
+#     session_cleanup are interval schedulers with no leader election, so extra
+#     replicas just duplicate every tick
+# There is no HPA and no PodDisruptionBudget here on purpose: a PDB with
+# minAvailable=1 on a single-replica Deployment would block node drains forever.
+#
+# To scale a specific worker independently later, split it out of
+# supervisord.conf into its own Deployment (or a CronJob for the schedulers)
+# rather than raising replicas here.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: iotaps-workers
+  labels:
+    app.kubernetes.io/name: iotaps
+    app.kubernetes.io/component: workers
+    app.kubernetes.io/part-of: iotaps
+spec:
+  replicas: 1
+  revisionHistoryLimit: 5
+  strategy:
+    # Recreate, not RollingUpdate: a rolling update would briefly run two
+    # mqtt_listeners and double-ingest telemetry. Accept a short gap instead --
+    # MQTT QoS and the Redis ingest queue buffer across it.
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: iotaps
+      app.kubernetes.io/component: workers
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: iotaps
+        app.kubernetes.io/component: workers
+        app.kubernetes.io/part-of: iotaps
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      terminationGracePeriodSeconds: 60
+      initContainers:
+        - name: wait-for-migrations
+          image: iotaps/api:latest
+          imagePullPolicy: IfNotPresent
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              set -eu
+              url=$(printf '%s' "$DATABASE_URL" | sed -e 's#+asyncpg##' -e 's#+psycopg2##')
+              until pg_isready -d "$url" -t 3 >/dev/null 2>&1; do
+                echo "waiting for postgres..."
+                sleep 2
+              done
+              until psql "$url" -tAc 'select 1 from alembic_version limit 1' >/dev/null 2>&1; do
+                echo "waiting for alembic migrations..."
+                sleep 3
+              done
+              echo "database ready"
+          env:
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef: { name: iotaps-secrets, key: POSTGRES_USER }
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: iotaps-secrets, key: POSTGRES_PASSWORD }
+            - name: POSTGRES_DB
+              valueFrom:
+                secretKeyRef: { name: iotaps-secrets, key: POSTGRES_DB }
+            - name: DATABASE_URL
+              value: postgresql+asyncpg://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@iotaps-postgres:5432/$(POSTGRES_DB)
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+          resources:
+            requests: { cpu: 50m, memory: 64Mi }
+            limits: { memory: 256Mi }
+      containers:
+        - name: workers
+          image: iotaps/api:latest
+          imagePullPolicy: IfNotPresent
+          workingDir: /srv # workers run as `python -m app.workers.<name>`
+          command: ["supervisord", "-c", "/etc/supervisor/supervisord.conf", "-n"]
+          envFrom:
+            - configMapRef:
+                name: iotaps-config
+          env:
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef: { name: iotaps-secrets, key: POSTGRES_USER }
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: iotaps-secrets, key: POSTGRES_PASSWORD }
+            - name: POSTGRES_DB
+              valueFrom:
+                secretKeyRef: { name: iotaps-secrets, key: POSTGRES_DB }
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: iotaps-secrets, key: REDIS_PASSWORD }
+            - name: DATABASE_URL
+              value: postgresql+asyncpg://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@iotaps-postgres:5432/$(POSTGRES_DB)
+            - name: REDIS_URL
+              value: redis://:$(REDIS_PASSWORD)@iotaps-redis:6379/0
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef: { name: iotaps-secrets, key: JWT_SECRET }
+            - name: SUPERADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: iotaps-secrets, key: SUPERADMIN_PASSWORD, optional: true }
+            - name: RAZORPAY_KEY_ID
+              valueFrom:
+                secretKeyRef: { name: iotaps-secrets, key: RAZORPAY_KEY_ID, optional: true }
+            - name: RAZORPAY_KEY_SECRET
+              valueFrom:
+                secretKeyRef: { name: iotaps-secrets, key: RAZORPAY_KEY_SECRET, optional: true }
+            - name: RAZORPAY_WEBHOOK_SECRET
+              valueFrom:
+                secretKeyRef: { name: iotaps-secrets, key: RAZORPAY_WEBHOOK_SECRET, optional: true }
+            # notification_sender needs SMTP; identity_vault_sync needs MONGODB_URI.
+            - name: SMTP_USERNAME
+              valueFrom:
+                secretKeyRef: { name: iotaps-secrets, key: SMTP_USERNAME, optional: true }
+            - name: SMTP_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: iotaps-secrets, key: SMTP_PASSWORD, optional: true }
+            - name: MONGODB_URI
+              valueFrom:
+                secretKeyRef: { name: iotaps-secrets, key: MONGODB_URI, optional: true }
+          volumeMounts:
+            - name: supervisor-config
+              mountPath: /etc/supervisor/supervisord.conf
+              subPath: supervisord.conf
+              readOnly: true
+            # supervisord's pidfile and control socket; the root filesystem is
+            # read-only so these need a writable mount.
+            - name: supervisor-run
+              mountPath: /var/run/supervisor
+            - name: supervisor-log
+              mountPath: /var/log/supervisor
+            - name: tmp
+              mountPath: /tmp
+          # Liveness checks only that supervisord itself still answers on its
+          # control socket. It deliberately does NOT require every program to be
+          # RUNNING: each program has autorestart=true, and failing the probe on
+          # a single crashed worker would restart the pod and take the other ten
+          # healthy workers down with it.
+          #
+          # `supervisorctl status` exits non-zero whenever any program is not
+          # running, so the exit code is ignored and the output is inspected for
+          # the connection-refused case instead.
+          livenessProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -c
+                - |
+                  out=$(supervisorctl -c /etc/supervisor/supervisord.conf status 2>&1) || true
+                  case "$out" in
+                    *"refused connection"*|*"no such file"*|*"SHUTDOWN_STATE"*) exit 1 ;;
+                  esac
+                  exit 0
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 3
+          readinessProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -c
+                - |
+                  out=$(supervisorctl -c /etc/supervisor/supervisord.conf status 2>&1) || true
+                  case "$out" in
+                    *"refused connection"*|*"no such file"*) exit 1 ;;
+                  esac
+                  exit 0
+            initialDelaySeconds: 15
+            periodSeconds: 15
+            timeoutSeconds: 10
+            failureThreshold: 3
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+          resources:
+            requests:
+              # 11 Python processes in one container; each one holds its own
+              # SQLAlchemy pool, which is the dominant cost here.
+              cpu: 250m
+              memory: 512Mi
+              ephemeral-storage: 256Mi
+            limits:
+              memory: 1Gi
+              ephemeral-storage: 1Gi
+      volumes:
+        - name: supervisor-config
+          configMap:
+            name: iotaps-supervisor-config
+        - name: supervisor-run
+          emptyDir: {}
+        - name: supervisor-log
+          emptyDir: {}
+        - name: tmp
+          emptyDir:
+            sizeLimit: 256Mi

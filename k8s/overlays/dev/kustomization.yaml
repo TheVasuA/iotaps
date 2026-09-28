@@ -1,0 +1,76 @@
+# Development overlay -- sized for a local cluster (kind, minikube, k3d).
+#
+#   cp secrets.env.example secrets.env
+#   kubectl apply -k k8s/overlays/dev
+#
+# Differences from prod: single replica per tier, no autoscaling, no disruption
+# budgets, no cloud load balancer, small volumes, debug logging.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: iotaps
+
+resources:
+  - ../../base
+  # SPA served in-cluster so the root of dev.iotaps.com works. base has no web
+  # tier because production hosts the frontend on Cloudflare Pages.
+  - web.yaml
+  - ingress-web.yaml
+  # Device-facing MQTT on <node-ip>:31883. Left out by default: a NodePort binds
+  # on every node interface and the broker allows anonymous connections, so on an
+  # unfirewalled host this publishes an open MQTT broker. Read the file header
+  # before uncommenting. Not needed for in-cluster MQTT or port-forwarding.
+  # - mosquitto-nodeport.yaml
+
+secretGenerator:
+  - name: iotaps-secrets
+    envs:
+      - secrets.env
+
+configMapGenerator:
+  # Supplies the SPA rewrite the web image lacks; see config/web-nginx.conf.
+  - name: iotaps-web-nginx
+    files:
+      - config/web-nginx.conf
+
+# HPAs fight with the fixed replica counts below and need metrics-server, which
+# local clusters often lack. PDBs on single-replica Deployments block drains.
+patches:
+  - target:
+      kind: HorizontalPodAutoscaler
+      name: ".*"
+    patch: |-
+      $patch: delete
+      apiVersion: autoscaling/v2
+      kind: HorizontalPodAutoscaler
+      metadata:
+        name: PLACEHOLDER
+  - target:
+      kind: PodDisruptionBudget
+      name: ".*"
+    patch: |-
+      $patch: delete
+      apiVersion: policy/v1
+      kind: PodDisruptionBudget
+      metadata:
+        name: PLACEHOLDER
+
+  - path: patch-dev-config.yaml
+  - path: patch-dev-resources.yaml
+  - path: patch-dev-storage.yaml
+  # Strips the TLS block: without cert-manager the referenced secret never
+  # exists and the ingress controller logs an error every few seconds.
+  - path: patch-dev-ingress.yaml
+
+replicas:
+  - name: iotaps-api
+    count: 1
+  - name: iotaps-ws
+    count: 1
+
+images:
+  # Build locally and load into the cluster rather than pulling, e.g.
+  #   docker build -t iotaps/api:dev ./app
+  #   kind load docker-image iotaps/api:dev
+  - name: iotaps/api
+    newTag: dev

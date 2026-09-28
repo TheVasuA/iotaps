@@ -1,0 +1,58 @@
+# Device-facing MQTT endpoint.
+#
+# ############################################################################
+# # SECURITY WARNING -- READ BEFORE APPLYING                                 #
+# ############################################################################
+# This Service exposes the broker to the public internet, and the broker is
+# configured with `allow_anonymous true` and no topic ACLs (see
+# base/config/mosquitto.conf). Devices are only *identified* by using their
+# provisioning token as the MQTT client id; nothing authenticates them. Anyone
+# who can reach port 1883 can subscribe to every org's telemetry and publish
+# commands to any device.
+#
+# Pick at least one mitigation before exposing this:
+#   * restrict loadBalancerSourceRanges below to known device networks, or
+#   * put the broker behind a VPN / private link, or
+#   * enable broker authentication (mosquitto-go-auth against the API, or
+#     password_file / TLS client certificates) and set allow_anonymous false.
+#
+# The MQTT-over-WebSocket listener (9001) is only needed if browser clients talk
+# to the broker directly. The IoTAPS frontend uses the app's own /ws gateway
+# instead, so 9001 is commented out -- leave it closed unless you need it.
+apiVersion: v1
+kind: Service
+metadata:
+  name: iotaps-mosquitto-lb
+  labels:
+    app.kubernetes.io/name: iotaps
+    app.kubernetes.io/component: mosquitto
+    app.kubernetes.io/part-of: iotaps
+  annotations:
+    # Cloud-specific hints; keep the one that matches your provider.
+    # AWS: an NLB passes TCP straight through, which MQTT needs.
+    service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
+    # DigitalOcean / others often need an explicit protocol hint:
+    # service.beta.kubernetes.io/do-loadbalancer-protocol: "tcp"
+spec:
+  type: LoadBalancer
+  # Preserve the real device IP for logging and rate limiting. The tradeoff is
+  # that traffic is only routed to nodes running a broker pod, so make sure the
+  # cloud load balancer's health check targets port 1883.
+  externalTrafficPolicy: Local
+  selector:
+    app.kubernetes.io/name: iotaps
+    app.kubernetes.io/component: mosquitto
+  ports:
+    - name: mqtt
+      port: 1883
+      targetPort: mqtt
+      protocol: TCP
+    # - name: mqtt-ws
+    #   port: 9001
+    #   targetPort: mqtt-ws
+    #   protocol: TCP
+  # Strongly recommended while the broker remains anonymous. An empty list means
+  # 0.0.0.0/0. Not every cloud provider honours this field -- verify with your
+  # provider before relying on it as your only control.
+  # loadBalancerSourceRanges:
+  #   - 203.0.113.0/24

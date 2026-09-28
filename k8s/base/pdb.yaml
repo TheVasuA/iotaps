@@ -1,0 +1,37 @@
+# Disruption budgets for voluntary disruptions (node drains, cluster upgrades).
+#
+# Only the multi-replica tiers get one. iotaps-workers, iotaps-postgres,
+# iotaps-redis and iotaps-mosquitto are all single-instance by design, and a PDB
+# on a single-replica workload blocks `kubectl drain` indefinitely -- which turns
+# every node upgrade into a manual intervention. Those components take a short
+# outage during a drain instead.
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: iotaps-api
+  labels:
+    app.kubernetes.io/name: iotaps
+    app.kubernetes.io/component: api
+    app.kubernetes.io/part-of: iotaps
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: iotaps
+      app.kubernetes.io/component: api
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: iotaps-ws
+  labels:
+    app.kubernetes.io/name: iotaps
+    app.kubernetes.io/component: ws
+    app.kubernetes.io/part-of: iotaps
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: iotaps
+      app.kubernetes.io/component: ws

@@ -1,0 +1,139 @@
+# Eclipse Mosquitto MQTT broker -- the device-facing ingress path.
+#
+# Single instance on purpose: Mosquitto 2.x has no clustering, and the
+# mqtt_listener worker holds a wildcard subscription across all orgs, so a
+# second broker would silently split the device fleet in two.
+#
+# Devices connect from outside the cluster. This file only creates the internal
+# ClusterIP Service; see overlays/prod/mosquitto-lb.yaml for external exposure
+# and read the security note in k8s/README.md first -- the broker allows
+# anonymous connections and enforces no topic ACLs.
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: iotaps-mosquitto
+  labels:
+    app.kubernetes.io/name: iotaps
+    app.kubernetes.io/component: mosquitto
+    app.kubernetes.io/part-of: iotaps
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: iotaps
+    app.kubernetes.io/component: mosquitto
+  ports:
+    - name: mqtt
+      port: 1883
+      targetPort: mqtt
+      protocol: TCP
+    - name: mqtt-ws
+      port: 9001
+      targetPort: mqtt-ws
+      protocol: TCP
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: iotaps-mosquitto
+  labels:
+    app.kubernetes.io/name: iotaps
+    app.kubernetes.io/component: mosquitto
+    app.kubernetes.io/part-of: iotaps
+spec:
+  serviceName: iotaps-mosquitto
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: iotaps
+      app.kubernetes.io/component: mosquitto
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: iotaps
+        app.kubernetes.io/component: mosquitto
+        app.kubernetes.io/part-of: iotaps
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1883 # `mosquitto` in the official image
+        runAsGroup: 1883
+        fsGroup: 1883
+        seccompProfile:
+          type: RuntimeDefault
+      terminationGracePeriodSeconds: 60
+      containers:
+        - name: mosquitto
+          image: eclipse-mosquitto:2
+          imagePullPolicy: IfNotPresent
+          # Every MQTT connection costs one file descriptor and max_connections
+          # is -1, so the fd limit is the real connection ceiling. Compose sets
+          # this with `ulimits`; Kubernetes has no equivalent field, so raise the
+          # soft limit in-process instead. This only works up to the hard limit
+          # the container runtime grants -- if the node runtime caps it low, the
+          # `|| true` keeps the broker starting rather than failing, and you need
+          # to raise LimitNOFILE on the runtime itself.
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              ulimit -n 65536 2>/dev/null || echo "warning: could not raise nofile, current=$(ulimit -n)"
+              exec /usr/sbin/mosquitto -c /mosquitto/config/mosquitto.conf
+          ports:
+            - name: mqtt
+              containerPort: 1883
+              protocol: TCP
+            - name: mqtt-ws
+              containerPort: 9001
+              protocol: TCP
+          volumeMounts:
+            - name: config
+              mountPath: /mosquitto/config/mosquitto.conf
+              subPath: mosquitto.conf
+              readOnly: true
+            - name: data
+              mountPath: /mosquitto/data
+          # TCP probes rather than mosquitto_sub: a $SYS round-trip depends on
+          # sys_interval (10s) and would make the probe timing-sensitive for no
+          # extra signal -- an accepting listener is what clients need.
+          readinessProbe:
+            tcpSocket:
+              port: mqtt
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          livenessProbe:
+            tcpSocket:
+              port: mqtt
+            initialDelaySeconds: 20
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 3
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              memory: 512Mi
+      volumes:
+        - name: config
+          configMap:
+            name: iotaps-mosquitto-config
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+        labels:
+          app.kubernetes.io/name: iotaps
+          app.kubernetes.io/component: mosquitto
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        # Holds the persistence DB: retained messages plus queued messages for
+        # offline persistent sessions (expired after 7d).
+        resources:
+          requests:
+            storage: 5Gi

@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: iotaps
+  labels:
+    app.kubernetes.io/name: iotaps
+    app.kubernetes.io/part-of: iotaps
