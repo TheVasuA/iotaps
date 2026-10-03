@@ -2,7 +2,8 @@
 
 Exercises GET /billing/plans and POST /billing/quote end to end via the FastAPI
 app. These endpoints are pure pricing reads (no tenant data), so no DB override
-is needed - only a valid bearer token. Verifies tier rates, exact boundaries,
+is needed. /plans is a public read (the pricing page must work before
+sign-in); /quote stays behind auth. Verifies tier rates, exact boundaries,
 the fixed annual price, auth enforcement, and request validation.
 """
 
@@ -44,8 +45,14 @@ def _auth() -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
 
 
-def test_plans_requires_auth(client):
-    assert client.get(_url("/billing/plans")).status_code == 401
+def test_plans_anonymous_ok(client):
+    # GET /billing/plans is a pure pricing read: the public pricing page calls
+    # it before sign-in, so an absent bearer token must not 401.
+    resp = client.get(_url("/billing/plans"))
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["free"]["max_devices"] == 2
+    assert [t["unit_price_monthly"] for t in body["pricing_tiers"]] == [99, 79, 69, 59]
 
 
 def test_quote_requires_auth(client):

@@ -3,7 +3,7 @@
 Surfaces the changelog and the "What's new" popup feed:
 
     POST /admin/changelog            (Super_Admin) publish an entry      -> {entry}
-    GET  /changelog                  list published entries              -> {entries}
+    GET  /changelog                  list published entries (public)     -> {entries}
     GET  /changelog/unseen           entries newer than last view        -> {show_popup, entries}
     POST /changelog/seen             mark the changelog as seen          -> {last_seen_at}
 
@@ -13,8 +13,11 @@ the "What's new" popup with the returned entries (entries published since the
 user's ``last_changelog_seen_at``, Req 22.2). Dismissing the popup calls
 ``POST /changelog/seen`` so it does not reappear for those entries.
 
-The changelog is platform-wide, so these reads only require an authenticated
-principal (no tenant scoping); publishing is restricted to the Super_Admin.
+The changelog is platform-wide (no tenant scoping). The published list is a
+public read: it backs the marketing Changelog page, which visitors see before
+sign-in. The unseen/seen endpoints stay authenticated because they read and
+write the caller's ``last_changelog_seen_at``; publishing is restricted to the
+Super_Admin.
 """
 
 from __future__ import annotations
@@ -89,10 +92,15 @@ async def publish_changelog(
 
 @router.get("/changelog", response_model=ChangelogListResponse)
 async def list_changelog(
-    _: Principal = Depends(get_principal),
     session: AsyncSession = Depends(get_session),
 ) -> ChangelogListResponse:
-    """List all published changelog entries, newest first (Req 22.1)."""
+    """List all published changelog entries, newest first (Req 22.1).
+
+    Public on purpose: published entries are exactly what the public Changelog
+    page exists to show, and the read returns no user or tenant data. Only
+    published entries are listed (drafts stay hidden), unseen/seen stay
+    authenticated, and ``POST /admin/changelog`` remains Super_Admin-only.
+    """
     entries = await changelog_service.list_published(session)
     return ChangelogListResponse(entries=[ChangelogEntryOut(**e) for e in entries])
 

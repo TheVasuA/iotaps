@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useEffect, useMemo, useState } from "react";
+import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import {
   ArrowLeft,
@@ -47,6 +47,18 @@ import QrDisplay from "@/components/devices/QrDisplay";
 import AssignUserDialog from "@/components/devices/AssignUserDialog";
 import ToggleControl from "@/components/devices/ToggleControl";
 import SliderControl from "@/components/devices/SliderControl";
+import EntityTabs from "@/components/ui/EntityTabs";
+import useDashboardTelemetry from "@/lib/useDashboardTelemetry";
+import { useDeviceEventLog } from "@/lib/useDeviceEventLog";
+import { issueCommand } from "@/lib/commandsApi";
+
+const DEVICE_TABS = [
+  { id: "overview", label: "Overview" },
+  { id: "telemetry", label: "Telemetry" },
+  { id: "attributes", label: "Attributes" },
+  { id: "events", label: "Events" },
+  { id: "commands", label: "Commands & RPC" },
+];
 
 // Per-device MQTT Explorer — tree structure with folder/file icons
 function DeviceExplorer({ device, telemetryData }) {
@@ -209,6 +221,14 @@ export default function DeviceDetailPage() {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [rechargeOpen, setRechargeOpen] = useState(false);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const activeTab = searchParams.get("tab") || "overview";
+  const [rpcTarget, setRpcTarget] = useState("");
+  const [rpcType, setRpcType] = useState("on");
+  const [rpcValue, setRpcValue] = useState("128");
+  const [rpcSending, setRpcSending] = useState(false);
+
+  const setTab = (tab) => setSearchParams({ tab }, { replace: true });
 
   useEffect(() => {
     if (!device && allDevices.length === 0) dispatch(fetchDevices());
@@ -237,6 +257,9 @@ export default function DeviceDetailPage() {
       setGroupId(device.group_id || "");
     }
   }, [device]);
+
+  useDashboardTelemetry(device ? [device.id] : []);
+  const eventLog = useDeviceEventLog(device?.id);
 
   const onSaveDetails = async () => {
     setSaving(true);
@@ -267,6 +290,45 @@ export default function DeviceDetailPage() {
     }
   };
 
+  const dirty = device
+    ? label !== (device.label || "") || groupId !== (device.group_id || "")
+    : false;
+  const telemetryData = latestTelemetry?.data || {};
+  const telemetryKeys = Object.keys(telemetryData);
+
+  const attributes = useMemo(() => {
+    if (!device) return [];
+    const groupLabel = groups.find((g) => g.id === device.group_id)?.name;
+    return [
+      ["Device ID", device.id],
+      ["UID", device.device_uid || "—"],
+      ["Label", device.label || "—"],
+      ["Status", device.status],
+      ["Group", groupLabel || "—"],
+      ["Firmware", device.firmware_version || "—"],
+      ["Maintenance", device.maintenance_mode ? "Yes" : "No"],
+      ["Simulator", device.is_simulator ? "Yes" : "No"],
+      ["Org ID", device.org_id || "—"],
+      ["MQTT node", device.node_id || "—"],
+      ["Template", device.template_id || "—"],
+    ];
+  }, [device, groups]);
+
+  const sendRpc = async () => {
+    if (!device) return;
+    setRpcSending(true);
+    try {
+      const body = { type: rpcType, target: rpcTarget || undefined };
+      if (rpcType === "value") body.value = Number(rpcValue);
+      await issueCommand(device.id, body);
+      toast.success("RPC command sent");
+    } catch (err) {
+      toast.error(extractApiError(err).message || "RPC failed");
+    } finally {
+      setRpcSending(false);
+    }
+  };
+
   if (loading && !device) {
     return <div className="flex justify-center py-20"><CircleNotch size={24} className="animate-spin text-muted-foreground" /></div>;
   }
@@ -279,10 +341,6 @@ export default function DeviceDetailPage() {
       </section>
     );
   }
-
-  const dirty = label !== (device.label || "") || groupId !== (device.group_id || "");
-  const telemetryData = latestTelemetry?.data || {};
-  const telemetryKeys = Object.keys(telemetryData);
 
   return (
     <section className="mx-auto max-w-6xl space-y-4 px-2">
@@ -309,127 +367,221 @@ export default function DeviceDetailPage() {
         </div>
       </header>
 
-      <div className="grid gap-4 lg:grid-cols-3">
-        {/* Left Column — Connection + QR */}
-        <div className="space-y-4">
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm">Connection Info</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <CredentialField label="Device Token" value={device.device_token} secret />
-              <CredentialField label="Server" value="mqtt://your-server:1883" />
-              <CredentialField label="Telemetry Topic" value={`iotaps/${device.org_id}/${device.id}/telemetry`} />
-              <CredentialField label="Command Topic" value={`iotaps/${device.org_id}/${device.id}/command`} />
-              <p className="text-[10px] text-muted-foreground">Use the Device Token as both MQTT username and password</p>
-            </CardContent>
-          </Card>
+      <EntityTabs tabs={DEVICE_TABS} active={activeTab} onChange={setTab} />
 
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm">QR Code</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <QrDisplay deviceId={device.id} className="mx-auto" />
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Center Column — Explorer + Live Telemetry + Controls */}
-        <div className="space-y-4 lg:col-span-2">
-          {/* Per-device MQTT Explorer */}
-          <DeviceExplorer device={device} telemetryData={telemetryData} />
-
-          {/* Live Telemetry */}
-          <Card>
-            <CardHeader className="pb-2">
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-sm">Live Telemetry</CardTitle>
-                <div className="flex items-center gap-3">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="h-7 text-xs"
-                    onClick={async () => {
-                      try {
-                        await exportTelemetryCsv(device.id, { resolution: "raw" });
-                        toast.success("Telemetry exported");
-                      } catch {
-                        toast.error("Export failed");
-                      }
-                    }}
-                  >
-                    <DownloadSimple size={14} /> Export CSV
+      {activeTab === "overview" ? (
+        <div className="grid gap-4 pt-4 lg:grid-cols-3">
+          <div className="space-y-4">
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm">Connection info</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <CredentialField label="Device Token" value={device.device_token} secret />
+                <CredentialField label="Server" value="mqtt://your-server:1883" />
+                <CredentialField label="Telemetry Topic" value={`iotaps/${device.org_id}/${device.id}/telemetry`} />
+                <CredentialField label="Command Topic" value={`iotaps/${device.org_id}/${device.id}/command`} />
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm">QR code</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <QrDisplay deviceId={device.id} className="mx-auto" />
+              </CardContent>
+            </Card>
+          </div>
+          <div className="space-y-4 lg:col-span-2">
+            <DeviceExplorer device={device} telemetryData={telemetryData} />
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm">Settings</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="space-y-1">
+                    <Label className="text-xs">Label</Label>
+                    <Input value={label} onChange={(e) => setLabel(e.target.value)} className="h-8 text-sm" />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">Group</Label>
+                    <select value={groupId} onChange={(e) => setGroupId(e.target.value)} className="h-8 w-full rounded-md border border-input bg-background px-2 text-sm">
+                      <option value="">No group</option>
+                      {groups.map((g) => (
+                        <option key={g.id} value={g.id}>{g.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+                <div className="flex items-center justify-between">
+                  <Label className="text-xs">Maintenance mode</Label>
+                  <Switch checked={device.maintenance_mode} onChange={onToggleMaintenance} />
+                </div>
+                <div className="flex gap-2">
+                  <Button size="sm" onClick={onSaveDetails} disabled={!dirty || saving}>
+                    <FloppyDisk size={14} /> Save
                   </Button>
-                  <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
-                    {device.status === "online" ? <PlugsConnected size={12} className="text-emerald-500" /> : <Plugs size={12} />}
-                    {device.status === "online" ? "Receiving" : "Offline"}
-                  </span>
+                  <Button size="sm" variant="outline" onClick={() => setAssignOpen(true)}>
+                    <UserPlus size={14} /> Assign user
+                  </Button>
                 </div>
-              </div>
-            </CardHeader>
-            <CardContent>
-              {telemetryKeys.length === 0 ? (
-                <p className="text-sm text-muted-foreground py-4 text-center">No telemetry data yet. Connect your device to see live values.</p>
-              ) : (
-                <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-                  {telemetryKeys.map((key) => (
-                    <div key={key} className="rounded-lg border border-border bg-muted/30 px-3 py-2">
-                      <div className="text-[10px] uppercase tracking-wide text-muted-foreground">{key}</div>
-                      <div className="text-lg font-bold tabular-nums">{String(telemetryData[key])}</div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
+              </CardContent>
+            </Card>
+          </div>
+        </div>
+      ) : null}
 
-          {/* Controls */}
+      {activeTab === "telemetry" ? (
+        <Card className="mt-4">
+          <CardHeader className="pb-2">
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-sm">Latest telemetry</CardTitle>
+              <div className="flex items-center gap-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-7 text-xs"
+                  onClick={async () => {
+                    try {
+                      await exportTelemetryCsv(device.id, { resolution: "raw" });
+                      toast.success("Telemetry exported");
+                    } catch {
+                      toast.error("Export failed");
+                    }
+                  }}
+                >
+                  <DownloadSimple size={14} /> Export CSV
+                </Button>
+                <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
+                  {device.status === "online" ? <PlugsConnected size={12} className="text-emerald-500" /> : <Plugs size={12} />}
+                  {device.status === "online" ? "Live" : "Offline"}
+                </span>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent>
+            {telemetryKeys.length === 0 ? (
+              <p className="py-8 text-center text-sm text-muted-foreground">No telemetry yet.</p>
+            ) : (
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                {telemetryKeys.map((key) => (
+                  <div key={key} className="rounded-lg border border-border bg-muted/30 px-3 py-2">
+                    <div className="text-[10px] uppercase text-muted-foreground">{key}</div>
+                    <div className="text-lg font-bold tabular-nums">{String(telemetryData[key])}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      ) : null}
+
+      {activeTab === "attributes" ? (
+        <div className="tb-entity-table mt-4">
+          <table>
+            <thead>
+              <tr>
+                <th>Key</th>
+                <th>Value</th>
+              </tr>
+            </thead>
+            <tbody>
+              {attributes.map(([k, v]) => (
+                <tr key={k}>
+                  <td className="font-medium text-muted-foreground">{k}</td>
+                  <td className="font-mono text-sm">{String(v)}</td>
+                </tr>
+              ))}
+              {telemetryKeys.map((key) => (
+                <tr key={`tel-${key}`}>
+                  <td className="font-medium text-muted-foreground">telemetry.{key}</td>
+                  <td className="font-mono text-sm">{String(telemetryData[key])}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : null}
+
+      {activeTab === "events" ? (
+        <div className="tb-entity-table mt-4">
+          <table>
+            <thead>
+              <tr>
+                <th>Time</th>
+                <th>Kind</th>
+                <th>Event</th>
+              </tr>
+            </thead>
+            <tbody>
+              {eventLog.length === 0 ? (
+                <tr>
+                  <td colSpan={3} className="py-8 text-center text-muted-foreground">
+                    Listening for status, telemetry, commands, and alerts…
+                  </td>
+                </tr>
+              ) : (
+                eventLog.map((ev, i) => (
+                  <tr key={`${ev.ts}-${i}`}>
+                    <td className="whitespace-nowrap text-xs text-muted-foreground">
+                      {new Date(ev.ts).toLocaleString()}
+                    </td>
+                    <td>
+                      <Badge variant="outline">{ev.kind || "event"}</Badge>
+                    </td>
+                    <td className="text-sm">{ev.message}</td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      ) : null}
+
+      {activeTab === "commands" ? (
+        <div className="mt-4 space-y-4">
           <Card>
             <CardHeader className="pb-2">
-              <CardTitle className="text-sm">Device Controls</CardTitle>
+              <CardTitle className="text-sm">Quick controls</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
               <ToggleControl deviceId={device.id} deviceLabel={device.label || device.device_uid} label="Relay / Power" />
-              <SliderControl deviceId={device.id} deviceLabel={device.label || device.device_uid} label="PWM Level" min={0} max={255} />
+              <SliderControl deviceId={device.id} deviceLabel={device.label || device.device_uid} label="PWM level" min={0} max={255} />
             </CardContent>
           </Card>
-
-          {/* Settings */}
           <Card>
             <CardHeader className="pb-2">
-              <CardTitle className="text-sm">Settings</CardTitle>
+              <CardTitle className="text-sm">RPC / custom command</CardTitle>
             </CardHeader>
-            <CardContent className="space-y-3">
-              <div className="grid gap-3 sm:grid-cols-2">
-                <div className="space-y-1">
-                  <Label className="text-xs">Label</Label>
-                  <Input value={label} onChange={(e) => setLabel(e.target.value)} placeholder={device.device_uid} className="h-8 text-sm" />
-                </div>
-                <div className="space-y-1">
-                  <Label className="text-xs">Group</Label>
-                  <select value={groupId} onChange={(e) => setGroupId(e.target.value)} className="h-8 w-full rounded-md border border-input bg-background px-2 text-sm">
-                    <option value="">No group</option>
-                    {groups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
-                  </select>
-                </div>
+            <CardContent className="grid gap-3 sm:grid-cols-2">
+              <div className="space-y-1">
+                <Label className="text-xs">Target (optional)</Label>
+                <Input value={rpcTarget} onChange={(e) => setRpcTarget(e.target.value)} placeholder="e.g. relay1" className="h-8 text-sm" />
               </div>
-              <div className="flex items-center justify-between">
-                <Label className="text-xs">Maintenance mode</Label>
-                <Switch checked={device.maintenance_mode} onChange={onToggleMaintenance} />
+              <div className="space-y-1">
+                <Label className="text-xs">Type</Label>
+                <select value={rpcType} onChange={(e) => setRpcType(e.target.value)} className="h-8 w-full rounded-md border border-input bg-background px-2 text-sm">
+                  <option value="on">on</option>
+                  <option value="off">off</option>
+                  <option value="value">value</option>
+                </select>
               </div>
-              <div className="flex items-center gap-2">
-                <Button size="sm" onClick={onSaveDetails} disabled={!dirty || saving}>
-                  <FloppyDisk size={14} /> {saving ? "Saving..." : "Save"}
-                </Button>
-                <Button size="sm" variant="outline" onClick={() => setAssignOpen(true)}>
-                  <UserPlus size={14} /> Assign user
+              {rpcType === "value" ? (
+                <div className="space-y-1 sm:col-span-2">
+                  <Label className="text-xs">Value</Label>
+                  <Input value={rpcValue} onChange={(e) => setRpcValue(e.target.value)} className="h-8 text-sm" />
+                </div>
+              ) : null}
+              <div className="sm:col-span-2">
+                <Button size="sm" onClick={sendRpc} disabled={rpcSending}>
+                  {rpcSending ? "Sending…" : "Send RPC"}
                 </Button>
               </div>
             </CardContent>
           </Card>
         </div>
-      </div>
+      ) : null}
 
       {/* Assign user dialog */}
       <AssignUserDialog open={assignOpen} onClose={() => setAssignOpen(false)} device={device} />

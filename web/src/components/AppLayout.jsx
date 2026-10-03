@@ -1,111 +1,128 @@
-import { Outlet, NavLink, useNavigate } from "react-router-dom";
-import { SignOut, ShieldCheck } from "@phosphor-icons/react";
+import { lazy, Suspense, useEffect, useMemo, useState } from "react";
+import { Outlet, useLocation, useMatches } from "react-router-dom";
 import { cn } from "@/lib/utils";
-import Logo from "./Logo";
-import ThemeModeToggle from "./ThemeModeToggle";
-import NotificationCenter from "./notifications/NotificationCenter";
-import WhatsNewPopup from "./changelog/WhatsNewPopup";
+// Lazy so framer-motion stays out of the entry chunk; the popup is non-critical
+// chrome and can pop in after the shell renders.
+const WhatsNewPopup = lazy(() => import("./changelog/WhatsNewPopup"));
 import useNotifications from "@/lib/useNotifications";
-import { Button } from "@/components/ui/button";
-import { useAppDispatch, useAppSelector } from "@/store/hooks";
-import { logoutAndRevoke, selectUser, selectRole } from "@/store/authSlice";
+import { useAppSelector } from "@/store/hooks";
+import { selectRole } from "@/store/authSlice";
+import { titleForPathname } from "@/lib/appNav";
+import { adminTitleForPath } from "@/lib/adminNav";
+import ConsoleSidebar from "@/components/console/ConsoleSidebar";
+import ConsoleTopBar from "@/components/console/ConsoleTopBar";
 
-// Authenticated shell layout. Real per-role navigation is built in the
-// dashboard/admin tasks (8.x, 20.x). This frames routed content and exposes the
-// theme toggle, 2FA setup link, and sign-out (Req 1.6).
-const navItems = [
-  { to: "/dashboard", label: "Dashboard" },
-  { to: "/devices", label: "Devices" },
-  { to: "/explorer", label: "IoT Explorer" },
-  { to: "/flasher", label: "Flasher" },
-  { to: "/rules", label: "Rules" },
-  { to: "/billing", label: "Billing" },
-  { to: "/referrals", label: "Referrals" },
-  { to: "/wallet", label: "Wallet" },
-  { to: "/support", label: "Support" },
-];
+const SIDEBAR_KEY = "iotaps.sidebar.collapsed";
 
 export default function AppLayout() {
-  const dispatch = useAppDispatch();
-  const navigate = useNavigate();
-  const user = useAppSelector(selectUser);
+  const location = useLocation();
+  const matches = useMatches();
   const role = useAppSelector(selectRole);
 
-  // Bridge in-app notifications from the WebSocket into the store (Req 20.2).
+  const [collapsed, setCollapsed] = useState(() => {
+    try {
+      return localStorage.getItem(SIDEBAR_KEY) === "1";
+    } catch {
+      return false;
+    }
+  });
+  const [mobileOpen, setMobileOpen] = useState(false);
+
   useNotifications();
 
-  // Super_Admin gets an extra "Admin" entry into the platform control panel
-  // (Req 23-29). Built in task 20.7.
-  const items =
-    role === "super_admin"
-      ? [...navItems, { to: "/admin", label: "Admin" }]
-      : navItems;
+  useEffect(() => {
+    try {
+      localStorage.setItem(SIDEBAR_KEY, collapsed ? "1" : "0");
+    } catch {
+      /* ignore */
+    }
+  }, [collapsed]);
 
-  const onLogout = async () => {
-    await dispatch(logoutAndRevoke());
-    navigate("/", { replace: true });
+  useEffect(() => {
+    setMobileOpen(false);
+  }, [location.pathname]);
+
+  const fullBleed = useMemo(
+    () => matches.some((m) => m.handle?.fullBleed),
+    [matches]
+  );
+
+  const consoleHome = useMemo(
+    () => matches.some((m) => m.handle?.consoleHome),
+    [matches]
+  );
+
+  const adminMode = location.pathname.startsWith("/admin");
+
+  const pageTitle = adminMode
+    ? adminTitleForPath(location.pathname)
+    : consoleHome
+      ? null
+      : titleForPathname(location.pathname);
+
+  const user = useAppSelector((s) => s.auth.user);
+
+  const sidebarProps = {
+    user,
+    role,
+    collapsed,
+    onToggleCollapsed: () => setCollapsed((c) => !c),
   };
 
   return (
-    <div className="min-h-screen bg-background text-foreground">
-      <header className="flex items-center justify-between border-b border-border px-6 py-3">
-        <div className="flex items-center gap-6">
-          <span className="flex items-center gap-3 font-brand text-3xl font-bold tracking-tight text-primary" title="IoT Automation Platform Services">
-            <Logo size={52} />
-            <span>iotaps<span className="font-medium text-primary/60">.com</span></span>
-          </span>
-          <nav className="flex gap-1">
-            {items.map((item) => (
-              <NavLink
-                key={item.to}
-                to={item.to}
-                className={({ isActive }) =>
-                  cn(
-                    "rounded-md px-3 py-1.5 text-sm transition-colors hover:bg-accent",
-                    isActive && "bg-accent text-accent-foreground"
-                  )
-                }
-              >
-                {item.label}
-              </NavLink>
-            ))}
-          </nav>
-        </div>
-        <div className="flex items-center gap-2">
-          <NavLink
-            to="/security/2fa"
-            className={({ isActive }) =>
-              cn(
-                "inline-flex h-9 w-9 items-center justify-center rounded-md border border-border bg-card text-foreground transition-colors hover:bg-accent",
-                isActive && "bg-accent text-accent-foreground"
-              )
-            }
-            aria-label="Two-factor authentication"
-            title="Two-factor authentication"
-          >
-            <ShieldCheck size={18} />
-          </NavLink>
-          <NotificationCenter />
-          <ThemeModeToggle />
-          <div className="hidden sm:flex items-center gap-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10 text-primary text-xs font-bold uppercase">
-              {user?.email ? user.email.charAt(0) : "U"}
-            </div>
-            <span className="text-sm text-foreground truncate max-w-[140px]" title={user?.email}>
-              {user?.email ? user.email.split("@")[0] : "User"}
-            </span>
-          </div>
-          <Button variant="ghost" size="sm" onClick={onLogout} className="text-muted-foreground hover:text-destructive">
-            <SignOut size={16} />
-            <span className="hidden sm:inline">Logout</span>
-          </Button>
-        </div>
-      </header>
-      <main className="p-6">
-        <Outlet />
-      </main>
-      {/* "What's new" popup on sign-in when unseen changelog entries exist (Req 22.2). */}
-      <WhatsNewPopup />
+    <div
+      className={cn(
+        "console-shell flex h-dvh overflow-hidden text-foreground",
+        adminMode ? "bg-background" : "bg-[hsl(var(--muted)/0.45)]"
+      )}
+    >
+      {!adminMode ? (
+        <ConsoleSidebar
+          {...sidebarProps}
+          className={cn("hidden shrink-0 md:flex", collapsed ? "w-[4.5rem]" : "w-[17rem]")}
+        />
+      ) : null}
+
+      {!adminMode && mobileOpen ? (
+        <button
+          type="button"
+          className="fixed inset-0 z-40 bg-black/40 md:hidden"
+          aria-label="Close menu"
+          onClick={() => setMobileOpen(false)}
+        />
+      ) : null}
+      {!adminMode ? (
+        <ConsoleSidebar
+          {...sidebarProps}
+          collapsed={false}
+          className={cn(
+            "fixed inset-y-0 left-0 z-50 w-[17rem] shadow-2xl transition-transform md:hidden",
+            mobileOpen ? "translate-x-0" : "-translate-x-full"
+          )}
+        />
+      ) : null}
+
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+        <ConsoleTopBar
+          onOpenMenu={adminMode ? undefined : () => setMobileOpen(true)}
+          pageTitle={pageTitle}
+          consoleHome={consoleHome}
+          adminMode={adminMode}
+        />
+
+        <main
+          className={cn(
+            "flex-1 min-h-0 overflow-auto",
+            adminMode || fullBleed ? "p-0" : consoleHome ? "p-0" : "px-4 pb-6 pt-2 sm:px-6"
+          )}
+        >
+          <Outlet />
+        </main>
+      </div>
+
+      <Suspense fallback={null}>
+        <WhatsNewPopup />
+      </Suspense>
     </div>
   );
 }

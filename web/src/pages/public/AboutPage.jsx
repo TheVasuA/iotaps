@@ -1,11 +1,12 @@
-import { PublicPage, PageHeader, Prose } from "@/components/public/PublicPage";
+import { MarketingShell, MarketingProse } from "@/components/public/PublicPage";
+import { MarketingRelatedLinks } from "@/pages/public/marketing/createMarketingPage";
+import { marketingImages } from "@/lib/marketingImages";
 
-// Public About page (Task 21.1, Req 31.1).
 const sections = [
   {
     heading: "Our mission",
     body: [
-      "IoTAPS makes it simple for organizations to provision IoT devices, visualize their data, and automate their behavior - without stitching together a dozen tools.",
+      "IoTAPS makes it simple for organizations to provision IoT devices, visualize their data, and automate their behavior — without stitching together a dozen tools.",
       "We focus on the Indian market with familiar payment methods, volume pricing, and a partner program that rewards the businesses growing the platform with us.",
     ],
   },
@@ -26,9 +27,22 @@ const sections = [
 
 export default function AboutPage() {
   return (
-    <PublicPage>
-      <PageHeader title="About IoTAPS" subtitle="The platform behind connected device fleets." />
-      <Prose sections={sections} />
-    </PublicPage>
+    <MarketingShell
+      eyebrow="Company"
+      title="About IoTAPS"
+      subtitle="The platform behind connected device fleets — built for teams who ship hardware, not cloud plumbing."
+      image={marketingImages.heroFleet}
+      imageAlt="Industrial IoT deployment in a modern facility"
+    >
+      <MarketingRelatedLinks
+        links={[
+          { to: "/partners", label: "Partners" },
+          { to: "/blog", label: "Product updates" },
+          { to: "/case-studies", label: "Deployment patterns" },
+          { to: "/contact", label: "Contact" },
+        ]}
+      />
+      <MarketingProse sections={sections} />
+    </MarketingShell>
   );
 }

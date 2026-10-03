@@ -189,6 +189,7 @@ export default function RuleListPage() {
       )}
 
       <TemplatePickerDialog
+        mode="create"
         open={pickerOpen}
         templates={templates}
         loading={templatesLoading}

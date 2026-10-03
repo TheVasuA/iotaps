@@ -1,6 +1,5 @@
 import { lazy, Suspense } from "react";
-import { createBrowserRouter } from "react-router-dom";
-import AppLayout from "@/components/AppLayout";
+import { createBrowserRouter, Navigate } from "react-router-dom";
 import RequireAuth from "@/components/RequireAuth";
 import RequireRole from "@/components/RequireRole";
 
@@ -23,50 +22,17 @@ function L(importFn) {
   );
 }
 
-// Public pages — lazy loaded
+// Layouts are lazily-loaded modules referenced directly at the route level;
+// every page resolves through L(() => import(...)) in the route table below.
 const PublicLayout = lazy(() => import("@/components/public/PublicLayout"));
-const LandingPage = lazy(() => import("@/pages/public/LandingPage"));
-const PricingPage = lazy(() => import("@/pages/public/PricingPage"));
-const AboutPage = lazy(() => import("@/pages/public/AboutPage"));
-const ContactPage = lazy(() => import("@/pages/public/ContactPage"));
-const DocsPage = lazy(() => import("@/pages/public/DocsPage"));
-const TermsPage = lazy(() => import("@/pages/public/TermsPage"));
-const PrivacyPage = lazy(() => import("@/pages/public/PrivacyPage"));
-const RefundPolicyPage = lazy(() => import("@/pages/public/RefundPolicyPage"));
-const StatusPage = lazy(() => import("@/pages/public/StatusPage"));
-const FaqPage = lazy(() => import("@/pages/public/FaqPage"));
-const ChangelogPage = lazy(() => import("@/pages/public/ChangelogPage"));
 
-// Auth pages
-const LoginPage = lazy(() => import("@/pages/auth/LoginPage"));
-const RegisterPage = lazy(() => import("@/pages/auth/RegisterPage"));
-const ForgotPasswordPage = lazy(() => import("@/pages/auth/ForgotPasswordPage"));
-const ResetPasswordPage = lazy(() => import("@/pages/auth/ResetPasswordPage"));
-const TwoFactorSetupPage = lazy(() => import("@/pages/auth/TwoFactorSetupPage"));
+// AppLayout pulls in WhatsNewPopup (framer-motion), so keeping it out of the
+// entry graph keeps vendor-motion off the critical path.
+const AppLayout = lazy(() => import("@/components/AppLayout"));
 
-// App pages — lazy loaded (heaviest)
-const DashboardPage = lazy(() => import("@/pages/dashboards/DashboardPage"));
-const DeviceListPage = lazy(() => import("@/pages/devices/DeviceListPage"));
-const DeviceDetailPage = lazy(() => import("@/pages/devices/DeviceDetailPage"));
-const WebFlasherPage = lazy(() => import("@/pages/devices/WebFlasherPage"));
-const MqttExplorerPage = lazy(() => import("@/pages/devices/MqttExplorerPage"));
-const RuleListPage = lazy(() => import("@/pages/rules/RuleListPage"));
-const RuleEditorPage = lazy(() => import("@/pages/rules/RuleEditorPage"));
-const BillingPage = lazy(() => import("@/pages/billing/BillingPage"));
-const ReferralPage = lazy(() => import("@/pages/referrals/ReferralPage"));
-const WalletPage = lazy(() => import("@/pages/partner/WalletPage"));
-const SupportChatPage = lazy(() => import("@/pages/support/SupportChatPage"));
-
-// Admin pages
+// AdminLayout is wrapped in RequireRole + Suspense at the route level, so it
+// cannot go through the L() helper and is declared here.
 const AdminLayout = lazy(() => import("@/pages/admin/AdminLayout"));
-const OverviewPanel = lazy(() => import("@/pages/admin/OverviewPanel"));
-const CompaniesPanel = lazy(() => import("@/pages/admin/CompaniesPanel"));
-const MqttNodesPanel = lazy(() => import("@/pages/admin/MqttNodesPanel"));
-const RevenuePanel = lazy(() => import("@/pages/admin/RevenuePanel"));
-const CouponsPanel = lazy(() => import("@/pages/admin/CouponsPanel"));
-const ContentPanel = lazy(() => import("@/pages/admin/ContentPanel"));
-const HealthPanel = lazy(() => import("@/pages/admin/HealthPanel"));
-const SecurityPanel = lazy(() => import("@/pages/admin/SecurityPanel"));
 
 export const router = createBrowserRouter([
   {
@@ -88,6 +54,23 @@ export const router = createBrowserRouter([
       { path: "status", element: L(() => import("@/pages/public/StatusPage")) },
       { path: "faq", element: L(() => import("@/pages/public/FaqPage")) },
       { path: "changelog", element: L(() => import("@/pages/public/ChangelogPage")) },
+      { path: "platform", element: L(() => import("@/pages/public/marketing/marketingPages").then((m) => ({ default: m.PlatformOverviewPage }))) },
+      { path: "solutions", element: L(() => import("@/pages/public/marketing/marketingPages").then((m) => ({ default: m.SolutionsHubPage }))) },
+      { path: "solutions/industrial-iot", element: L(() => import("@/pages/public/marketing/marketingPages").then((m) => ({ default: m.IndustrialIotPage }))) },
+      { path: "solutions/smart-agriculture", element: L(() => import("@/pages/public/marketing/marketingPages").then((m) => ({ default: m.SmartAgriculturePage }))) },
+      { path: "solutions/energy-hvac", element: L(() => import("@/pages/public/marketing/marketingPages").then((m) => ({ default: m.EnergyHvacPage }))) },
+      { path: "blynk-alternative", element: L(() => import("@/pages/public/BlynkAlternativePage")) },
+      { path: "enterprise", element: L(() => import("@/pages/public/marketing/marketingPages").then((m) => ({ default: m.EnterprisePage }))) },
+      { path: "developers", element: L(() => import("@/pages/public/marketing/marketingPages").then((m) => ({ default: m.DevelopersHubPage }))) },
+      { path: "developers/mqtt-devices", element: L(() => import("@/pages/public/marketing/marketingPages").then((m) => ({ default: m.MqttDevicesPage }))) },
+      { path: "developers/dashboards-api", element: L(() => import("@/pages/public/marketing/marketingPages").then((m) => ({ default: m.DashboardsApiPage }))) },
+      { path: "partners", element: L(() => import("@/pages/public/marketing/marketingPages").then((m) => ({ default: m.PartnersPage }))) },
+      { path: "blog", element: L(() => import("@/pages/public/marketing/marketingPages").then((m) => ({ default: m.BlogPage }))) },
+      { path: "case-studies", element: L(() => import("@/pages/public/marketing/marketingPages").then((m) => ({ default: m.CaseStudiesPage }))) },
+      { path: "security", element: L(() => import("@/pages/public/marketing/marketingPages").then((m) => ({ default: m.SecurityContactPage }))) },
+      // Catch-all lives inside PublicLayout so a mistyped URL still gets the
+      // site header, footer, and navigation instead of a bare unstyled div.
+      { path: "*", element: L(() => import("@/pages/public/NotFoundPage")) },
     ],
   },
   { path: "/login", element: L(() => import("@/pages/auth/LoginPage")) },
@@ -97,24 +80,44 @@ export const router = createBrowserRouter([
   {
     element: (
       <RequireAuth>
-        <AppLayout />
+        <Suspense fallback={<PageLoader />}>
+          <AppLayout />
+        </Suspense>
       </RequireAuth>
     ),
     children: [
-      { path: "dashboard", element: L(() => import("@/pages/dashboards/DashboardPage")) },
+      { index: true, element: <Navigate to="/get-started" replace /> },
+      {
+        path: "get-started",
+        handle: { consoleHome: true },
+        element: L(() => import("@/pages/console/GetStartedPage")),
+      },
+      { path: "dashboard", handle: { fullBleed: true }, element: L(() => import("@/pages/dashboards/DashboardPage")) },
+      { path: "homepage", handle: { fullBleed: true }, element: L(() => import("@/pages/dashboards/DashboardPage")) },
       { path: "devices", element: L(() => import("@/pages/devices/DeviceListPage")) },
       { path: "devices/:id", element: L(() => import("@/pages/devices/DeviceDetailPage")) },
       { path: "flasher", element: L(() => import("@/pages/devices/WebFlasherPage")) },
-      { path: "explorer", element: L(() => import("@/pages/devices/MqttExplorerPage")) },
+      { path: "explorer", handle: { fullBleed: true }, element: L(() => import("@/pages/devices/MqttExplorerPage")) },
+      { path: "custom-data", handle: { fullBleed: true }, element: L(() => import("@/pages/console/ConsoleFeaturePage")) },
+      { path: "locations", handle: { fullBleed: true }, element: L(() => import("@/pages/console/ConsoleFeaturePage")) },
+      { path: "organizations", handle: { fullBleed: true }, element: L(() => import("@/pages/console/ConsoleFeaturePage")) },
+      { path: "snapshots", handle: { fullBleed: true }, element: L(() => import("@/pages/console/ConsoleFeaturePage")) },
+      { path: "fleet", handle: { fullBleed: true }, element: L(() => import("@/pages/console/ConsoleFeaturePage")) },
       { path: "rules", element: L(() => import("@/pages/rules/RuleListPage")) },
-      { path: "rules/:id", element: L(() => import("@/pages/rules/RuleEditorPage")) },
+      { path: "rules/:id", handle: { fullBleed: true }, element: L(() => import("@/pages/rules/RuleEditorPage")) },
       { path: "billing", element: L(() => import("@/pages/billing/BillingPage")) },
       { path: "referrals", element: L(() => import("@/pages/referrals/ReferralPage")) },
       { path: "wallet", element: L(() => import("@/pages/partner/WalletPage")) },
       { path: "support", element: L(() => import("@/pages/support/SupportChatPage")) },
-      { path: "security/2fa", element: L(() => import("@/pages/auth/TwoFactorSetupPage")) },
+      { path: "org/users", element: L(() => import("@/pages/org/OrgUsersPage")) },
+      { path: "settings", handle: { fullBleed: true }, element: L(() => import("@/pages/settings/AccountSettingsPage")) },
+      {
+        path: "security/2fa",
+        element: <Navigate to="/settings?tab=security" replace />,
+      },
       {
         path: "admin",
+        handle: { fullBleed: true },
         element: (
           <RequireRole role="super_admin">
             <Suspense fallback={<PageLoader />}>
@@ -142,14 +145,9 @@ export const router = createBrowserRouter([
       },
     ],
   },
-  {
-    path: "*",
-    element: (
-      <div className="flex min-h-screen items-center justify-center text-muted-foreground">
-        Page not found
-      </div>
-    ),
-  },
+  // No root-level `*` fallback: the PublicLayout children already include a
+  // splat route that renders NotFoundPage inside the site chrome, so every
+  // unmatched path resolves there rather than a bare unstyled div.
 ]);
 
 export default router;

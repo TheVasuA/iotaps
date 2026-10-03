@@ -36,6 +36,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.errors import NotFoundError, ValidationError
 from app.core.security.tenant import TenantScope
 from app.models.dashboard import Dashboard, Widget
+from app.models.user import User
+from app.services.dashboard_settings import normalize_settings
 
 # Number of random bytes behind a Public_Dashboard_Link token (Req 8.1). 32
 # bytes (~43 url-safe chars) makes the token unguessable.
@@ -77,46 +79,75 @@ class DashboardService:
     # Dashboards (Req 7.1, 7.2)
     # ------------------------------------------------------------------
     async def create_dashboard(
-        self, *, name: str, layout: dict | None = None
+        self,
+        *,
+        name: str,
+        layout: dict | None = None,
+        settings: dict | None = None,
     ) -> Dashboard:
         """Create a dashboard in the caller's org owned by the caller."""
         if not name or not name.strip():
             raise ValidationError(
                 "Dashboard name is required", error_code="invalid_dashboard_name"
             )
+        default_settings = {"time_range": "1w", "org_scope": "all", "device_ids": None}
         dashboard = Dashboard(
             org_id=self._org_uuid,
             owner_user_id=self._owner_user_uuid(),
             name=name.strip(),
             layout=layout,
+            settings=await normalize_settings(
+                self._session,
+                self._org_uuid,
+                settings,
+                default_settings,
+            ),
         )
         self._session.add(dashboard)
         await self._session.commit()
         await self._session.refresh(dashboard)
         return dashboard
 
-    async def list_dashboards(self) -> list[Dashboard]:
-        """List dashboards owned by the caller — strict per-user isolation.
+    def _user_can_view(self, dashboard: Dashboard, user_id: uuid.UUID) -> bool:
+        if dashboard.owner_user_id == user_id:
+            return True
+        access = (dashboard.settings or {}).get("access") or {}
+        uid = str(user_id)
+        return uid in (access.get("viewers") or []) or uid in (access.get("editors") or [])
 
-        Every user (including Super_Admin) sees ONLY their own dashboards.
-        """
+    def _user_can_edit(self, dashboard: Dashboard, user_id: uuid.UUID) -> bool:
+        if dashboard.owner_user_id == user_id:
+            return True
+        access = (dashboard.settings or {}).get("access") or {}
+        return str(user_id) in (access.get("editors") or [])
+
+    async def list_dashboards(self) -> list[Dashboard]:
+        """List dashboards the caller owns or has been granted access to."""
         from sqlalchemy import select as sa_select
+
         owner = self._owner_user_uuid()
         if not owner:
             return []
-        stmt = sa_select(Dashboard).where(
-            Dashboard.owner_user_id == owner
-        ).order_by(Dashboard.created_at.desc())
+        stmt = sa_select(Dashboard).where(Dashboard.org_id == self._org_uuid).order_by(
+            Dashboard.created_at.desc()
+        )
         result = await self._session.execute(stmt)
-        return list(result.scalars().all())
+        return [row for row in result.scalars().all() if self._user_can_view(row, owner)]
 
     async def get_dashboard(self, dashboard_id: uuid.UUID) -> Dashboard:
-        """Fetch a dashboard by id — strict per-user ownership check."""
+        """Fetch a dashboard the caller owns or has been granted access to."""
         dashboard = await self._session.get(Dashboard, dashboard_id)
-        if dashboard is None:
+        if dashboard is None or dashboard.org_id != self._org_uuid:
             raise NotFoundError("Dashboard not found")
         owner = self._owner_user_uuid()
-        if not owner or dashboard.owner_user_id != owner:
+        if not owner or not self._user_can_view(dashboard, owner):
+            raise NotFoundError("Dashboard not found")
+        return dashboard
+
+    async def _require_editor(self, dashboard_id: uuid.UUID) -> Dashboard:
+        dashboard = await self.get_dashboard(dashboard_id)
+        owner = self._owner_user_uuid()
+        if not owner or not self._user_can_edit(dashboard, owner):
             raise NotFoundError("Dashboard not found")
         return dashboard
 
@@ -126,8 +157,10 @@ class DashboardService:
         *,
         name: str | None = None,
         layout: dict | None = None,
+        settings: dict | None = None,
         name_set: bool = False,
         layout_set: bool = False,
+        settings_set: bool = False,
     ) -> Dashboard:
         """Update a dashboard's name and/or persisted grid layout (Req 7.1, 7.2).
 
@@ -135,7 +168,7 @@ class DashboardService:
         "explicitly provided" so a PATCH that only updates the layout does not
         clobber the name and vice versa.
         """
-        dashboard = await self._scope.get(Dashboard, dashboard_id)
+        dashboard = await self._require_editor(dashboard_id)
 
         if name_set:
             if name is None or not name.strip():
@@ -147,6 +180,14 @@ class DashboardService:
 
         if layout_set:
             dashboard.layout = layout  # persist React Grid Layout (Req 7.1, 7.2)
+
+        if settings_set:
+            dashboard.settings = await normalize_settings(
+                self._session,
+                self._org_uuid,
+                settings,
+                dashboard.settings,
+            )
 
         await self._session.commit()
         await self._session.refresh(dashboard)
@@ -163,9 +204,8 @@ class DashboardService:
         config: dict | None = None,
         layout: dict | None = None,
     ) -> Widget:
-        """Add a widget to a dashboard the caller owns (Req 7.1, 7.3)."""
-        # get_dashboard enforces per-user ownership
-        await self.get_dashboard(dashboard_id)
+        """Add a widget to a dashboard the caller can edit (Req 7.1, 7.3)."""
+        await self._require_editor(dashboard_id)
 
         if type not in WIDGET_TYPES:
             raise ValidationError(
@@ -189,8 +229,7 @@ class DashboardService:
         self, dashboard_id: uuid.UUID, widget_id: uuid.UUID
     ) -> Widget:
         """Fetch a widget, enforcing it belongs to the caller's dashboard."""
-        # get_dashboard enforces per-user ownership
-        await self.get_dashboard(dashboard_id)
+        await self._require_editor(dashboard_id)
         widget = await self._session.get(Widget, widget_id)
         if widget is None or widget.dashboard_id != dashboard_id:
             raise NotFoundError("Widget not found in this dashboard")
@@ -250,6 +289,82 @@ class DashboardService:
         await self._session.delete(widget)
         await self._session.commit()
 
+    async def get_access(self, dashboard_id: uuid.UUID) -> dict:
+        """Org members plus who can view or edit this dashboard. Owner only."""
+        dashboard = await self.get_dashboard(dashboard_id)
+        owner = self._owner_user_uuid()
+        if dashboard.owner_user_id != owner:
+            raise NotFoundError("Dashboard not found")
+        access = (dashboard.settings or {}).get("access") or {}
+        viewers = {str(item) for item in access.get("viewers") or []}
+        editors = {str(item) for item in access.get("editors") or []}
+        result = await self._session.execute(
+            select(User).where(User.org_id == dashboard.org_id).order_by(User.email.asc())
+        )
+        members = []
+        for user in result.scalars().all():
+            uid = str(user.id)
+            is_owner = user.id == dashboard.owner_user_id
+            members.append(
+                {
+                    "id": uid,
+                    "email": user.email,
+                    "display_name": user.display_name,
+                    "role": user.role,
+                    "is_owner": is_owner,
+                    "can_view": is_owner or uid in viewers or uid in editors,
+                    "can_edit": is_owner or uid in editors,
+                }
+            )
+        return {
+            "is_public": bool(dashboard.is_public),
+            "public_token": dashboard.public_token,
+            "members": members,
+        }
+
+    async def set_access(
+        self,
+        dashboard_id: uuid.UUID,
+        *,
+        viewers: list[str],
+        editors: list[str],
+    ) -> dict:
+        """Replace viewer and editor grants. Owner only. Editors can also view."""
+        dashboard = await self.get_dashboard(dashboard_id)
+        owner = self._owner_user_uuid()
+        if dashboard.owner_user_id != owner:
+            raise NotFoundError("Dashboard not found")
+
+        result = await self._session.execute(
+            select(User.id).where(User.org_id == dashboard.org_id)
+        )
+        allowed = {str(row[0]) for row in result.all()}
+        owner_id = str(dashboard.owner_user_id) if dashboard.owner_user_id else ""
+
+        def _clean(raw: list[str]) -> list[str]:
+            cleaned: list[str] = []
+            for item in raw:
+                uid = str(item)
+                if uid == owner_id:
+                    continue
+                if uid not in allowed:
+                    raise ValidationError(
+                        "Access can only be granted to people in this workspace",
+                        error_code="invalid_access_user",
+                    )
+                if uid not in cleaned:
+                    cleaned.append(uid)
+            return cleaned
+
+        editor_ids = _clean(editors)
+        viewer_ids = [uid for uid in _clean(viewers) if uid not in editor_ids]
+        settings = dict(dashboard.settings or {})
+        settings["access"] = {"viewers": viewer_ids, "editors": editor_ids}
+        dashboard.settings = settings
+        await self._session.commit()
+        await self._session.refresh(dashboard)
+        return await self.get_access(dashboard_id)
+
     # ------------------------------------------------------------------
     # Public sharing (Req 8.1, 8.3)
     # ------------------------------------------------------------------
@@ -262,7 +377,7 @@ class DashboardService:
         The parent dashboard is resolved through the tenant scope, so a caller
         can only share a dashboard in their own organization (Req 3.3).
         """
-        dashboard = await self._scope.get(Dashboard, dashboard_id)
+        dashboard = await self._require_editor(dashboard_id)
         if not dashboard.public_token:
             dashboard.public_token = secrets.token_urlsafe(_PUBLIC_TOKEN_BYTES)
         dashboard.is_public = True
@@ -277,16 +392,110 @@ class DashboardService:
         Public_Dashboard_Link can no longer resolve to any dashboard - the
         platform must deny access once sharing is disabled (Req 8.3).
         """
-        dashboard = await self._scope.get(Dashboard, dashboard_id)
+        dashboard = await self._require_editor(dashboard_id)
         dashboard.is_public = False
         dashboard.public_token = None
         await self._session.commit()
         await self._session.refresh(dashboard)
         return dashboard
 
+    async def duplicate_dashboard(self, dashboard_id: uuid.UUID) -> Dashboard:
+        """Copy a dashboard and its widgets. The copy is private and not a homepage."""
+        source = await self._require_editor(dashboard_id)
+        widgets = await self.list_widgets(dashboard_id)
+        name = await self._unique_copy_name(source.name)
+        settings = dict(source.settings or {})
+        settings.pop("access", None)
+        settings["homepage_users"] = []
+        settings["access"] = {"viewers": [], "editors": []}
+        copy = Dashboard(
+            org_id=self._org_uuid,
+            owner_user_id=self._owner_user_uuid(),
+            name=name,
+            is_public=False,
+            layout=dict(source.layout) if isinstance(source.layout, dict) else None,
+            settings=settings,
+        )
+        self._session.add(copy)
+        await self._session.flush()
+        for widget in widgets:
+            self._session.add(
+                Widget(
+                    org_id=self._org_uuid,
+                    dashboard_id=copy.id,
+                    type=widget.type,
+                    config=dict(widget.config) if isinstance(widget.config, dict) else None,
+                    layout=dict(widget.layout) if isinstance(widget.layout, dict) else None,
+                    pinned=bool(widget.pinned),
+                    annotations=list(widget.annotations or []),
+                )
+            )
+        await self._session.commit()
+        await self._session.refresh(copy)
+        return copy
+
+    async def _unique_copy_name(self, name: str) -> str:
+        from sqlalchemy import select as sa_select
+
+        result = await self._session.execute(
+            sa_select(Dashboard.name).where(Dashboard.org_id == self._org_uuid)
+        )
+        taken = {row[0].lower() for row in result.all() if row[0]}
+        base = f"{name} copy"
+        candidate = base
+        n = 2
+        while candidate.lower() in taken:
+            candidate = f"{base} {n}"
+            n += 1
+        return candidate
+
+    async def set_homepage(self, dashboard_id: uuid.UUID) -> Dashboard:
+        """Mark this dashboard as the caller's homepage and clear it on the others."""
+        dashboard = await self._require_editor(dashboard_id)
+        user_id = str(self._owner_user_uuid() or "")
+        if not user_id:
+            raise NotFoundError("Dashboard not found")
+        from sqlalchemy import select as sa_select
+
+        result = await self._session.execute(
+            sa_select(Dashboard).where(Dashboard.org_id == self._org_uuid)
+        )
+        for row in result.scalars().all():
+            settings = dict(row.settings or {})
+            users = [str(item) for item in settings.get("homepage_users") or [] if item]
+            if row.id == dashboard.id:
+                if user_id not in users:
+                    users.append(user_id)
+            elif user_id in users:
+                users = [item for item in users if item != user_id]
+            else:
+                continue
+            settings["homepage_users"] = users
+            row.settings = settings
+        await self._session.commit()
+        await self._session.refresh(dashboard)
+        return dashboard
+
+    async def clear_homepage(self, dashboard_id: uuid.UUID) -> Dashboard:
+        """Stop using this dashboard as the caller's homepage."""
+        dashboard = await self._require_editor(dashboard_id)
+        user_id = str(self._owner_user_uuid() or "")
+        if not user_id:
+            raise NotFoundError("Dashboard not found")
+        settings = dict(dashboard.settings or {})
+        settings["homepage_users"] = [
+            str(item)
+            for item in settings.get("homepage_users") or []
+            if item and str(item) != user_id
+        ]
+        dashboard.settings = settings
+        await self._session.commit()
+        await self._session.refresh(dashboard)
+        return dashboard
+
     async def delete_dashboard(self, dashboard_id: uuid.UUID) -> None:
         """Delete a dashboard and its widgets (tenant-scoped)."""
-        dashboard = await self._scope.get(Dashboard, dashboard_id)
+        dashboard = await self._require_editor(dashboard_id)
         # Delete all widgets belonging to this dashboard
         stmt = self._scope.select(Widget).where(Widget.dashboard_id == dashboard_id)
         result = await self._session.execute(stmt)

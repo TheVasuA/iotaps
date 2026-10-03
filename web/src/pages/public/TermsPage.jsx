@@ -1,4 +1,4 @@
-import { PublicPage, PageHeader, Prose } from "@/components/public/PublicPage";
+import { MarketingShell, MarketingProse } from "@/components/public/PublicPage";
 
 // Public Terms of Service page (Task 21.1, Req 31.1).
 const sections = [
@@ -36,9 +36,13 @@ const sections = [
 
 export default function TermsPage() {
   return (
-    <PublicPage>
-      <PageHeader title="Terms of Service" subtitle="Last updated: the date shown in your account region." />
-      <Prose sections={sections} />
-    </PublicPage>
+    <MarketingShell
+      eyebrow="Legal"
+      title="Terms of Service"
+      subtitle="Last updated: the date shown in your account region."
+      showCta={false}
+    >
+      <MarketingProse sections={sections} />
+    </MarketingShell>
   );
 }

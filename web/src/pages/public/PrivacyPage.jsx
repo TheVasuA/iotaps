@@ -1,4 +1,4 @@
-import { PublicPage, PageHeader, Prose } from "@/components/public/PublicPage";
+import { MarketingShell, MarketingProse } from "@/components/public/PublicPage";
 
 // Public Privacy Policy page (Task 21.1, Req 31.1).
 const sections = [
@@ -36,9 +36,13 @@ const sections = [
 
 export default function PrivacyPage() {
   return (
-    <PublicPage>
-      <PageHeader title="Privacy Policy" subtitle="How we collect, use, and protect your data." />
-      <Prose sections={sections} />
-    </PublicPage>
+    <MarketingShell
+      eyebrow="Legal"
+      title="Privacy Policy"
+      subtitle="How we collect, use, and protect your data."
+      showCta={false}
+    >
+      <MarketingProse sections={sections} />
+    </MarketingShell>
   );
 }

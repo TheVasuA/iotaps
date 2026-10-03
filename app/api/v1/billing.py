@@ -2,14 +2,15 @@
 
 Implements the billing surface from design.md ("Billing, Partner, Referral"):
 
-    GET    /billing/plans                  -> {free, pro, pricing_tiers}
+    GET    /billing/plans                  -> {free, pro, pricing_tiers} (public)
     POST   /billing/quote   {device_count, billing_cycle} -> {unit_price, total}
     POST   /billing/subscribe              -> {razorpay_order}   (per-device/fleet, coupon)
     POST   /billing/webhook  (Razorpay signed) -> {status}
 
 Plans/quote are pure pricing reads backed by
-:mod:`app.services.billing_service` - no tenant data is touched, so they only
-require an authenticated principal. ``/subscribe`` creates a Razorpay order and
+:mod:`app.services.billing_service` - no tenant data is touched. ``GET
+/plans`` is unauthenticated (see below); ``/quote`` still requires an
+authenticated principal. ``/subscribe`` creates a Razorpay order and
 persists a pending subscription + payment (tenant-scoped, Project_Center). The
 ``/webhook`` is called unauthenticated by Razorpay with a signed body; it
 verifies the signature before activating/extending (capture) or retaining state
@@ -133,10 +134,15 @@ class RefundResponse(BaseModel):
 # Endpoints
 # ---------------------------------------------------------------------------
 @router.get("/plans", response_model=PlansResponse)
-async def get_plans(
-    _: Principal = Depends(get_principal),
-) -> PlansResponse:
-    """Return the Free/Pro plans and the volume-discount tiers (Req 16.1-16.5)."""
+async def get_plans() -> PlansResponse:
+    """Return the Free/Pro plans and the volume-discount tiers (Req 16.1-16.5).
+
+    Public on purpose: this is a pure pricing read over static catalogue data
+    (plan_limits + PRICING_TIERS) with no tenant/PII exposure, and the public
+    pricing page must render for visitors before sign-in. Rather than adding a
+    duplicate ``GET /public/plans``, this read-only GET drops its principal
+    requirement; ``/quote``/``/subscribe``/``/refund`` stay authenticated.
+    """
     return PlansResponse(**billing_service.plans())
 
 

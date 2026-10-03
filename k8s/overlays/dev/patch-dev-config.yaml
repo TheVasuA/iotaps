@@ -21,10 +21,18 @@ data:
   # callbacks.
   PUBLIC_BASE_URL: http://dev.iotaps.com
 
+  # Device MQTT endpoint (mqtt_nodes registry + firmware defaults). DNS: dev-mqtt.iotaps.com → cluster node.
+  MQTT_PUBLIC_HOST: dev-mqtt.iotaps.com
+  MQTT_PUBLIC_PORT: "1883"
+  MQTT_NODE_SEED_CAPACITY: "10000"
+
   # Explicit origins rather than "*": the app sets allow_credentials=True, and
   # browsers reject a wildcard on credentialed requests, which would silently
   # break the SPA's authenticated calls. The :30080 form is kept because the
   # NodePort still works alongside hostPort 80.
   CORS_ALLOW_ORIGINS: http://dev.iotaps.com,https://dev.iotaps.com,http://dev.iotaps.com:30080,http://localhost:5173
 
-  SUPERADMIN_EMAIL: admin@dev.iotaps.com
+  SUPERADMIN_EMAIL: tamilsanmia@gmail.com
+
+  # Must match web/.env.production VITE_GOOGLE_CLIENT_ID (Google Cloud OAuth client).
+  GOOGLE_OAUTH_CLIENT_ID: "622587244689-ok0kqi83d23u2esdv5pk6t0alen4jro2.apps.googleusercontent.com"

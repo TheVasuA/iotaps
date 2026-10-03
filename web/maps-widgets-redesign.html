@@ -1,0 +1,536 @@
+<title>Maps Widget Redesign</title>
+<style>
+  /* Layout: one column of widget cards in the toolbox chrome, then the same
+     three as placed dashboard tiles. */
+  :root {
+    --bg: #f4f6f8;
+    --surface: #ffffff;
+    --surface-2: #f8fafc;
+    --fg: #0f172a;
+    --muted: #64748b;
+    --muted-2: #94a3b8;
+    --line: #e2e8f0;
+    --line-2: #cbd5e1;
+    --accent: #10b981;
+    --accent-soft: #d1fae5;
+    --warn: #f59e0b;
+    --warn-soft: #fef3c7;
+    --info: #3b82f6;
+    --info-soft: #dbeafe;
+    --offline: #94a3b8;
+    --upgrade-a: #ff8a3d;
+    --upgrade-b: #ff5a36;
+    --card-shadow: 0 1px 2px rgba(15, 23, 42, .05), 0 8px 24px -12px rgba(15, 23, 42, .12);
+    --font-brand: "Space Grotesk", ui-sans-serif, system-ui, sans-serif;
+    --font-ui: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --font-mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0b1220;
+      --surface: #111a2b;
+      --surface-2: #16223a;
+      --fg: #e6edf7;
+      --muted: #94a3b8;
+      --muted-2: #64748b;
+      --line: #1e2d48;
+      --line-2: #2b3d5c;
+      --accent: #34d399;
+      --accent-soft: #064e3b;
+      --warn: #fbbf24;
+      --warn-soft: #78350f;
+      --info: #60a5fa;
+      --info-soft: #1e3a8a;
+      --offline: #64748b;
+      --card-shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 12px 28px -12px rgba(0, 0, 0, .55);
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0b1220;
+    --surface: #111a2b;
+    --surface-2: #16223a;
+    --fg: #e6edf7;
+    --muted: #94a3b8;
+    --muted-2: #64748b;
+    --line: #1e2d48;
+    --line-2: #2b3d5c;
+    --accent: #34d399;
+    --accent-soft: #064e3b;
+    --warn: #fbbf24;
+    --warn-soft: #78350f;
+    --info: #60a5fa;
+    --info-soft: #1e3a8a;
+    --offline: #64748b;
+    --card-shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 12px 28px -12px rgba(0, 0, 0, .55);
+    color-scheme: dark;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--fg);
+    font-family: var(--font-ui);
+    margin: 0;
+  }
+  .wrap {
+    max-width: 1080px;
+    margin: 0 auto;
+    padding-inline: clamp(16px, 4vw, 32px);
+    padding-block: clamp(28px, 5vw, 56px) 64px;
+    display: flex;
+    flex-direction: column;
+    gap: clamp(28px, 4vw, 44px);
+  }
+
+  /* ---------- header ---------- */
+  .masthead { display: flex; flex-direction: column; gap: 10px; max-width: 62ch; }
+  .eyebrow {
+    font-family: var(--font-brand);
+    font-size: 11px; font-weight: 600;
+    letter-spacing: .18em; text-transform: uppercase;
+    color: var(--accent);
+  }
+  h1 {
+    font-family: var(--font-brand);
+    font-size: clamp(28px, 5vw, 40px);
+    line-height: 1.08; letter-spacing: -.02em;
+    margin: 0; text-wrap: balance;
+  }
+  .lede { margin: 0; font-size: 16px; line-height: 1.65; color: var(--muted); }
+
+  /* ---------- section headers ---------- */
+  .section { display: flex; flex-direction: column; gap: 18px; }
+  .section-head { display: flex; flex-direction: column; gap: 5px; }
+  .section-head h2 {
+    font-family: var(--font-brand);
+    font-size: 18px; font-weight: 600; letter-spacing: -.01em; margin: 0;
+  }
+  .section-head p { margin: 0; font-size: 13.5px; line-height: 1.6; color: var(--muted); max-width: 62ch; }
+
+  /* ---------- toolbox card chrome (mirrors .wb-card + .wb-upgrade) ---------- */
+  .toolbox { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+  .card {
+    position: relative;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 14px 14px 12px;
+    display: flex; flex-direction: column; gap: 10px;
+    box-shadow: var(--card-shadow);
+    min-width: 0;
+  }
+  .card-title {
+    font-family: var(--font-brand);
+    font-size: 12px; font-weight: 600;
+    text-transform: uppercase; letter-spacing: .09em;
+    color: var(--fg);
+    padding-right: 76px;
+    margin: 0;
+    line-height: 1.35;
+  }
+  .upgrade {
+    position: absolute; right: 10px; top: 10px;
+    border-radius: 6px;
+    background: linear-gradient(135deg, var(--upgrade-a), var(--upgrade-b));
+    color: #fff; font-size: 9px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: .06em;
+    padding: 4px 6px;
+  }
+  .preview {
+    height: 92px;
+    border-radius: 9px;
+    overflow: hidden;
+    position: relative;
+    display: flex; flex-direction: column;
+    background: var(--surface-2);
+    border: 1px solid var(--line);
+    flex-shrink: 0;
+  }
+
+  /* ---------- shared preview bits ---------- */
+  .preview svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .chip {
+    display: inline-flex; align-items: center; gap: 5px;
+    border-radius: 999px; padding: 3px 8px;
+    font-size: 9px; font-weight: 600; line-height: 1;
+    background: color-mix(in srgb, var(--surface) 88%, transparent);
+    border: 1px solid var(--line);
+    color: var(--muted);
+  }
+  .chip .dot { width: 6px; height: 6px; border-radius: 999px; flex-shrink: 0; }
+  .preview-top {
+    position: relative; z-index: 1;
+    display: flex; align-items: flex-start; justify-content: space-between; gap: 8px;
+    padding: 8px;
+  }
+  .preview-bottom {
+    position: relative; z-index: 1;
+    margin-top: auto;
+    display: flex; align-items: flex-end; justify-content: space-between; gap: 8px;
+    padding: 0 8px 7px;
+    min-width: 0;
+  }
+  .preview-label {
+    font-size: 10px; font-weight: 600; color: var(--fg);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .preview-sub {
+    font-family: var(--font-mono);
+    font-size: 9px; color: var(--muted-2);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    margin-top: 1px;
+  }
+  .pin-icon { color: var(--accent); flex-shrink: 0; }
+
+  /* hotspots on the floor plan */
+  .hotspot {
+    position: absolute; transform: translate(-50%, -50%);
+    display: flex; flex-direction: column; align-items: center;
+    border-radius: 7px; padding: 4px 7px;
+    background: color-mix(in srgb, var(--surface) 92%, transparent);
+    border: 1px solid var(--line-2);
+    box-shadow: 0 1px 2px rgba(15, 23, 42, .1);
+  }
+  .hotspot b {
+    font-size: 11px; font-weight: 700; line-height: 1;
+    font-variant-numeric: tabular-nums;
+  }
+  .hotspot span {
+    font-size: 8px; font-weight: 600;
+    text-transform: uppercase; letter-spacing: .07em;
+    opacity: .72; margin-top: 2px;
+  }
+  .hotspot.emerald { border-color: color-mix(in srgb, var(--accent) 38%, var(--line)); color: color-mix(in srgb, var(--accent) 82%, var(--fg)); }
+  .hotspot.blue { border-color: color-mix(in srgb, var(--info) 38%, var(--line)); color: color-mix(in srgb, var(--info) 82%, var(--fg)); }
+  .hotspot.amber { border-color: color-mix(in srgb, var(--warn) 42%, var(--line)); color: color-mix(in srgb, var(--warn) 78%, var(--fg)); }
+
+  /* ---------- placed / canvas variants ---------- */
+  .canvas { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+  .tile {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 12px 14px 14px;
+    display: flex; flex-direction: column; gap: 10px;
+    box-shadow: var(--card-shadow);
+    min-width: 0;
+    min-height: 190px;
+  }
+  .tile-label {
+    font-family: var(--font-brand);
+    font-size: 10.5px; font-weight: 600;
+    text-transform: uppercase; letter-spacing: .11em;
+    color: var(--muted); margin: 0;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .tile-body { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 8px; }
+  .stat-row { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
+  .stat-pill {
+    display: inline-flex; align-items: center; gap: 5px;
+    border: 1px solid var(--line); background: var(--surface-2);
+    border-radius: 999px; padding: 3px 8px;
+    font-size: 11px; font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    color: var(--fg);
+  }
+  .stat-pill .dot { width: 6px; height: 6px; border-radius: 999px; }
+  .device-list {
+    list-style: none; margin: 0; padding: 0;
+    border: 1px solid var(--line); border-radius: 8px;
+    overflow: hidden; background: var(--surface-2);
+  }
+  .device-list li {
+    display: flex; align-items: center; gap: 8px;
+    padding: 7px 10px;
+    border-bottom: 1px solid var(--line);
+    font-size: 12px;
+  }
+  .device-list li:last-child { border-bottom: 0; }
+  .device-list .name {
+    flex: 1; min-width: 0;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .device-list .state {
+    font-size: 9px; font-weight: 600;
+    text-transform: uppercase; letter-spacing: .07em;
+    color: var(--muted);
+    flex-shrink: 0;
+  }
+  .footer-note {
+    display: flex; align-items: center; gap: 6px;
+    font-size: 11px; color: var(--muted);
+    min-width: 0;
+  }
+  .footer-note span {
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    min-width: 0;
+  }
+  .coords {
+    font-family: var(--font-mono);
+    font-size: 11px; font-variant-numeric: tabular-nums;
+    color: var(--muted); flex-shrink: 0;
+  }
+
+  /* map surface placeholders for the placed geomap tile */
+  .map-frame {
+    flex: 1; min-height: 0; border-radius: 8px;
+    border: 1px solid var(--line);
+    overflow: hidden; position: relative;
+    background: var(--surface-2);
+  }
+
+  /* ---------- rationale ---------- */
+  .notes {
+    display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px;
+  }
+  .note {
+    border-top: 2px solid var(--line-2);
+    padding-top: 12px;
+    display: flex; flex-direction: column; gap: 6px;
+    min-width: 0;
+  }
+  .note h3 {
+    font-family: var(--font-brand);
+    font-size: 12px; font-weight: 600;
+    text-transform: uppercase; letter-spacing: .1em;
+    margin: 0; color: var(--fg);
+  }
+  .note p { margin: 0; font-size: 13px; line-height: 1.62; color: var(--muted); }
+  .note .metaphor {
+    font-family: var(--font-mono);
+    font-size: 10.5px; letter-spacing: .02em;
+    color: var(--accent);
+    text-transform: uppercase;
+  }
+
+  @media (max-width: 860px) {
+    .toolbox, .canvas, .notes { grid-template-columns: 1fr; }
+    .preview { height: 104px; }
+    .card-title { padding-right: 80px; }
+  }
+</style>
+
+<div class="wrap">
+  <header class="masthead">
+    <div class="eyebrow">Widget toolbox · Maps</div>
+    <h1>Three map widgets, three distinct forms</h1>
+    <p class="lede">
+      The Maps group previously shipped two visual identities across three entries —
+      Geomap and Devices connection statuses map were the same card. Each entry now
+      carries its own form, so a glance at the toolbox says what the widget is for.
+    </p>
+  </header>
+
+  <section class="section">
+    <div class="section-head">
+      <h2>Toolbox previews</h2>
+      <p>As they appear in the widget palette, at the compact card height the toolbox uses.</p>
+    </div>
+
+    <div class="toolbox">
+      <!-- GEOMAP -->
+      <article class="card">
+        <h3 class="card-title">Geomap</h3>
+        <div class="upgrade">Upgrade</div>
+        <div class="preview">
+          <svg viewBox="0 0 160 60" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+            <defs>
+              <pattern id="geo-grid" width="16" height="15" patternUnits="userSpaceOnUse">
+                <path d="M16 0 L0 0 0 15" fill="none" stroke="var(--line)" stroke-width="0.5"></path>
+              </pattern>
+            </defs>
+            <rect width="160" height="60" fill="url(#geo-grid)"></rect>
+            <path d="M0 42 Q22 30 40 36 T78 30 Q98 22 118 30 T160 24 L160 60 L0 60 Z" fill="var(--surface)"></path>
+            <path d="M0 42 Q22 30 40 36 T78 30 Q98 22 118 30 T160 24" fill="none" stroke="var(--line-2)" stroke-width="1"></path>
+            <path d="M18 48 L44 40 L70 43 L96 28 L118 22" fill="none" stroke="var(--accent)" stroke-opacity="0.7" stroke-width="1.25" stroke-linecap="round" stroke-dasharray="3 2.5"></path>
+            <circle cx="18" cy="48" r="2" fill="var(--accent)" fill-opacity="0.5"></circle>
+            <circle cx="118" cy="22" r="6.5" fill="var(--accent)" fill-opacity="0.25"></circle>
+            <circle cx="118" cy="22" r="2.75" fill="var(--accent)" stroke="var(--surface)" stroke-width="1.25"></circle>
+          </svg>
+          <div class="preview-top">
+            <div class="chip" style="border-color: color-mix(in srgb, var(--accent) 35%, var(--line)); color: var(--accent);">
+              <span class="dot" style="background: var(--accent);"></span>Live
+            </div>
+            <div class="chip">1 node</div>
+          </div>
+          <div class="preview-bottom">
+            <div style="min-width:0">
+              <div class="preview-label">Global Nodes Online</div>
+              <div class="preview-sub">37.7749° N, 122.4194° W</div>
+            </div>
+            <svg class="pin-icon" width="13" height="13" viewBox="0 0 256 256" fill="currentColor" aria-hidden="true"><path d="M128,16a88.1,88.1,0,0,0-88,88c0,75.3,80,132.2,83.4,134.6a8,8,0,0,0,9.2,0C136,236.2,216,179.3,216,104A88.1,88.1,0,0,0,128,16Zm0,56a32,32,0,1,1-32,32A32,32,0,0,1,128,72Z"></path></svg>
+          </div>
+        </div>
+      </article>
+
+      <!-- IMAGE MAP -->
+      <article class="card">
+        <h3 class="card-title">Image map</h3>
+        <div class="upgrade">Upgrade</div>
+        <div class="preview">
+          <svg viewBox="0 0 160 60" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+            <rect x="10" y="8" width="140" height="44" rx="2" fill="color-mix(in srgb, var(--surface) 70%, transparent)" stroke="var(--line-2)" stroke-width="1"></rect>
+            <path d="M62 8 L62 52 M62 30 L112 30 M112 8 L112 52" fill="none" stroke="var(--line-2)" stroke-width="1"></path>
+            <path d="M62 16 L62 24 M62 38 L62 46 M112 14 L112 22" fill="none" stroke="var(--surface-2)" stroke-width="1.5"></path>
+          </svg>
+          <div style="position:relative; flex:1; display:flex; align-items:stretch; gap:4px; padding:8px;">
+            <div style="width:36%; display:flex; flex-direction:column; align-items:flex-start; justify-content:center;">
+              <div class="hotspot emerald"><b>45.5%</b><span>Zone A</span></div>
+            </div>
+            <div style="flex:1; display:flex; flex-direction:column; align-items:center; justify-content:flex-start; padding-top:2px;">
+              <div class="hotspot blue"><b>20.2°C</b><span>Zone B</span></div>
+            </div>
+            <div style="width:28%; display:flex; flex-direction:column; align-items:flex-end; justify-content:center;">
+              <div class="hotspot amber"><b>0.34</b><span>Zone C</span></div>
+            </div>
+          </div>
+          <div style="position:relative; display:flex; align-items:center; gap:5px; padding:0 8px 7px;">
+            <svg width="11" height="11" viewBox="0 0 256 256" fill="var(--muted-2)" aria-hidden="true"><path d="M104,40H56A16,16,0,0,0,40,56v48a16,16,0,0,0,16,16h48a16,16,0,0,0,16-16V56A16,16,0,0,0,104,40Zm0,64H56V56h48Zm96-64H152a16,16,0,0,0-16,16v48a16,16,0,0,0,16,16h48a16,16,0,0,0,16-16V56A16,16,0,0,0,200,40Zm0,64H152V56h48Zm-96,32H56a16,16,0,0,0-16,16v48a16,16,0,0,0,16,16h48a16,16,0,0,0,16-16V152A16,16,0,0,0,104,136Zm0,64H56V152h48Zm96-64H152a16,16,0,0,0-16,16v48a16,16,0,0,0,16,16h48a16,16,0,0,0,16-16V152A16,16,0,0,0,200,136Zm0,64H152V152h48Z"></path></svg>
+            <span class="preview-sub" style="font-family:var(--font-ui); color: var(--muted); font-size:9px;">Floor plan · 3 zones</span>
+          </div>
+        </div>
+      </article>
+
+      <!-- STATUS MAP -->
+      <article class="card">
+        <h3 class="card-title">Devices connection statuses map</h3>
+        <div class="upgrade">Upgrade</div>
+        <div class="preview">
+          <svg viewBox="0 0 160 60" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+            <g stroke-width="1.25" stroke-dasharray="2.5 2.5">
+              <line x1="80" y1="32" x2="30" y2="16" stroke="var(--accent)" stroke-opacity="0.7"></line>
+              <line x1="80" y1="32" x2="28" y2="46" stroke="var(--accent)" stroke-opacity="0.7"></line>
+              <line x1="80" y1="32" x2="128" y2="14" stroke="var(--warn)" stroke-opacity="0.7"></line>
+              <line x1="80" y1="32" x2="132" y2="48" stroke="var(--line-2)"></line>
+              <line x1="80" y1="32" x2="80" y2="12" stroke="var(--accent)" stroke-opacity="0.7"></line>
+            </g>
+            <circle cx="30" cy="16" r="4.5" fill="var(--accent)" stroke="var(--surface-2)" stroke-width="1.25"></circle>
+            <circle cx="28" cy="46" r="4.5" fill="var(--accent)" stroke="var(--surface-2)" stroke-width="1.25"></circle>
+            <circle cx="80" cy="12" r="4.5" fill="var(--accent)" stroke="var(--surface-2)" stroke-width="1.25"></circle>
+            <circle cx="128" cy="14" r="4.5" fill="var(--warn)" stroke="var(--surface-2)" stroke-width="1.25"></circle>
+            <circle cx="132" cy="48" r="4.5" fill="var(--offline)" stroke="var(--surface-2)" stroke-width="1.25"></circle>
+            <circle cx="80" cy="32" r="10" fill="var(--accent)" fill-opacity="0.2"></circle>
+            <circle cx="80" cy="32" r="6" fill="var(--fg)" stroke="var(--surface-2)" stroke-width="1.5"></circle>
+          </svg>
+          <div class="preview-top">
+            <div class="chip" style="gap:6px;">
+              <span class="dot" style="background:var(--accent)"></span><span style="font-variant-numeric:tabular-nums; color:var(--fg)">3</span>
+              <span class="dot" style="background:var(--warn)"></span><span style="font-variant-numeric:tabular-nums; color:var(--fg)">1</span>
+              <span class="dot" style="background:var(--offline)"></span><span style="font-variant-numeric:tabular-nums; color:var(--fg)">1</span>
+            </div>
+            <div class="chip">5 devices</div>
+          </div>
+          <div class="preview-bottom">
+            <div style="min-width:0">
+              <div class="preview-label">Connection status</div>
+              <div class="preview-sub">3 online · 1 degraded · 1 offline</div>
+            </div>
+          </div>
+        </div>
+      </article>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="section-head">
+      <h2>What each form is saying</h2>
+      <p>Three different spatial metaphors, so the cards no longer compete for the same shape.</p>
+    </div>
+    <div class="notes">
+      <div class="note">
+        <div class="metaphor">Pin on a chart</div>
+        <h3>Geomap</h3>
+        <p>A graticule, a coastline, a dashed track and a live marker. Geographic position is the subject, so the card reads as a map surface rather than a status chip wearing one.</p>
+      </div>
+      <div class="note">
+        <div class="metaphor">Values on a plan</div>
+        <h3>Image map</h3>
+        <p>A floor plan with rooms and door gaps, and a reading pinned inside each zone. The numbers are annotations on an image — which is what an image map is — instead of a row of unrelated stats.</p>
+      </div>
+      <div class="note">
+        <div class="metaphor">Links between nodes</div>
+        <h3>Status map</h3>
+        <p>A hub with satellites, each link coloured by connection health. Connection status is about topology and link state, so that is what the card draws.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="section-head">
+      <h2>On the dashboard</h2>
+      <p>The same three identities once placed, so the toolbox promise survives the drop.</p>
+    </div>
+    <div class="canvas">
+      <!-- placed geomap -->
+      <article class="tile">
+        <p class="tile-label">Geomap</p>
+        <div class="tile-body">
+          <div class="map-frame">
+            <svg viewBox="0 0 240 120" preserveAspectRatio="xMidYMid slice" aria-hidden="true" style="position:absolute; inset:0; width:100%; height:100%;">
+              <rect width="240" height="120" fill="var(--surface-2)"></rect>
+              <g stroke="var(--line)" stroke-width="0.75">
+                <path d="M0 30 H240 M0 60 H240 M0 90 H240 M40 0 V120 M80 0 V120 M120 0 V120 M160 0 V120 M200 0 V120"></path>
+              </g>
+              <path d="M0 78 Q40 62 72 70 T136 58 Q172 48 240 56 L240 120 L0 120 Z" fill="var(--surface)" stroke="var(--line-2)" stroke-width="1"></path>
+              <path d="M24 100 L70 84 L112 88 L156 62 L188 52" fill="none" stroke="var(--accent)" stroke-opacity="0.65" stroke-width="1.5" stroke-dasharray="4 3" stroke-linecap="round"></path>
+              <circle cx="188" cy="52" r="12" fill="var(--accent)" fill-opacity="0.18"></circle>
+              <circle cx="188" cy="52" r="5" fill="var(--accent)" stroke="var(--surface)" stroke-width="2"></circle>
+            </svg>
+          </div>
+          <div class="footer-note" style="justify-content:space-between; gap:8px;">
+            <span style="display:flex; align-items:center; gap:5px; min-width:0;">
+              <svg width="12" height="12" viewBox="0 0 256 256" fill="var(--accent)" aria-hidden="true"><path d="M128,16a88.1,88.1,0,0,0-88,88c0,75.3,80,132.2,83.4,134.6a8,8,0,0,0,9.2,0C136,236.2,216,179.3,216,104A88.1,88.1,0,0,0,128,16Zm0,56a32,32,0,1,1-32,32A32,32,0,0,1,128,72Z"></path></svg>
+              <span>Fleet gateway</span>
+            </span>
+            <span class="coords">19.0760, 72.8777</span>
+          </div>
+        </div>
+      </article>
+
+      <!-- placed image map -->
+      <article class="tile">
+        <p class="tile-label">Image map</p>
+        <div class="tile-body">
+          <div class="map-frame">
+            <svg viewBox="0 0 240 130" preserveAspectRatio="xMidYMid meet" aria-hidden="true" style="position:absolute; inset:0; width:100%; height:100%;">
+              <rect x="18" y="18" width="204" height="94" rx="3" fill="color-mix(in srgb, var(--surface) 65%, transparent)" stroke="var(--line-2)" stroke-width="1.25"></rect>
+              <path d="M92 18 L92 112 M92 65 L168 65 M168 18 L168 112" fill="none" stroke="var(--line-2)" stroke-width="1.25"></path>
+              <path d="M92 36 L92 52 M92 80 L92 98 M168 32 L168 50" fill="none" stroke="var(--surface)" stroke-width="3"></path>
+            </svg>
+            <div class="hotspot emerald" style="left:22%; top:44%"><b>45.5%</b><span>Zone A</span></div>
+            <div class="hotspot blue" style="left:54%; top:26%"><b>20.2°C</b><span>Zone B</span></div>
+            <div class="hotspot amber" style="left:80%; top:66%"><b>0.34</b><span>Zone C</span></div>
+          </div>
+          <div class="footer-note">
+            <svg width="12" height="12" viewBox="0 0 256 256" fill="var(--muted)" aria-hidden="true"><path d="M104,40H56A16,16,0,0,0,40,56v48a16,16,0,0,0,16,16h48a16,16,0,0,0,16-16V56A16,16,0,0,0,104,40Zm0,64H56V56h48Zm96-64H152a16,16,0,0,0-16,16v48a16,16,0,0,0,16,16h48a16,16,0,0,0,16-16V56A16,16,0,0,0,200,40Zm0,64H152V56h48Zm-96,32H56a16,16,0,0,0-16,16v48a16,16,0,0,0,16,16h48a16,16,0,0,0,16-16V152A16,16,0,0,0,104,136Zm0,64H56V152h48Zm96-64H152a16,16,0,0,0-16,16v48a16,16,0,0,0,16,16h48a16,16,0,0,0,16-16V152A16,16,0,0,0,200,136Zm0,64H152V152h48Z"></path></svg>
+            <span>Floor plan · 3 zones</span>
+          </div>
+        </div>
+      </article>
+
+      <!-- placed status map -->
+      <article class="tile">
+        <p class="tile-label">Devices connection statuses map</p>
+        <div class="tile-body">
+          <div class="stat-row">
+            <div class="stat-pill"><span class="dot" style="background:var(--accent)"></span>4</div>
+            <div class="stat-pill"><span class="dot" style="background:var(--warn)"></span>1</div>
+            <div class="stat-pill"><span class="dot" style="background:var(--offline)"></span>1</div>
+            <div class="footer-note" style="margin-left:auto;">
+              <svg width="12" height="12" viewBox="0 0 256 256" fill="var(--muted)" aria-hidden="true"><path d="M240,148a8,8,0,0,1-8,8H216v16a8,8,0,0,1-16,0V156H184a8,8,0,0,1,0-16h16V124a8,8,0,0,1,16,0v16h16A8,8,0,0,1,240,148ZM52.6,172.6a60,60,0,1,1,84.8-84.8,8,8,0,0,1-11.3,11.3,44,44,0,1,0-62.2,62.2,8,8,0,0,1-11.3,11.3ZM146.7,138.1a8,8,0,0,1-3.4-10.7A36,36,0,1,0,108,164a35.8,35.8,0,0,0,27.4-12.8,8,8,0,1,1,12.7,10,52,52,0,1,1,24.7-123.4,8,8,0,1,1-3,15.6,36,36,0,1,0,13.8,69.7A8,8,0,0,1,146.7,138.1Z"></path></svg>
+              <span>6 devices</span>
+            </div>
+          </div>
+          <ul class="device-list">
+            <li><span class="dot" style="width:6px;height:6px;border-radius:999px;background:var(--accent);flex-shrink:0"></span><span class="name">Mumbai cold-store</span><span class="state">online</span></li>
+            <li><span class="dot" style="width:6px;height:6px;border-radius:999px;background:var(--accent);flex-shrink:0"></span><span class="name">Pune line-2 gateway</span><span class="state">online</span></li>
+            <li><span class="dot" style="width:6px;height:6px;border-radius:999px;background:var(--warn);flex-shrink:0"></span><span class="name">Chennai pump station</span><span class="state">degraded</span></li>
+            <li><span class="dot" style="width:6px;height:6px;border-radius:999px;background:var(--offline);flex-shrink:0"></span><span class="name">Kochi meter array</span><span class="state">offline</span></li>
+          </ul>
+        </div>
+      </article>
+    </div>
+  </section>
+</div>

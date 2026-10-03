@@ -1,9 +1,7 @@
-import { PublicPage, PageHeader } from "@/components/public/PublicPage";
-import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
-
-// Public Docs / API page (Task 21.1, Req 31.1). A concise developer-facing
-// overview of the REST API surface and MQTT topic structure. Endpoint shapes
-// mirror the API in app/api/v1 and the design document.
+import { Link } from "react-router-dom";
+import { MarketingShell, MarketingPageHeader } from "@/components/public/PublicPage";
+import { MarketingRelatedLinks } from "@/pages/public/marketing/createMarketingPage";
+import { marketingImages } from "@/lib/marketingImages";
 
 const endpointGroups = [
   {
@@ -53,54 +51,72 @@ const methodColor = {
 
 export default function DocsPage() {
   return (
-    <PublicPage className="max-w-5xl">
-      <PageHeader
-        title="Docs / API"
-        subtitle="The IoTAPS REST API is versioned under /api/v1 and authenticated with a bearer JWT."
+    <MarketingShell
+      eyebrow="Developers"
+      title="Docs / API"
+      subtitle="The IoTAPS REST API is versioned under /api/v1 and authenticated with a bearer JWT."
+      image={marketingImages.consoleDesk}
+      imageAlt="Developer workspace with IoT dashboard"
+      metaTitle="API & developer documentation"
+      metaDescription="REST API reference for IoTAPS: JWT auth, devices, telemetry, commands, dashboards, rules, and billing under /api/v1 — plus MQTT topic conventions."
+      wide
+    >
+      <MarketingRelatedLinks
+        title="Developer guides"
+        links={[
+          { to: "/developers/mqtt-devices", label: "MQTT & devices" },
+          { to: "/developers/dashboards-api", label: "Dashboards API" },
+          { to: "/changelog", label: "Release notes" },
+          { to: "/platform", label: "Platform overview" },
+        ]}
       />
+      <article className="blynk-platform-card mb-8 p-6 sm:p-8">
+        <h2 className="text-lg font-bold uppercase tracking-wide">Getting started</h2>
+        <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
+          Authenticate to receive a JWT access token and a refresh token, then send the access token
+          as an{" "}
+          <code className="rounded bg-muted px-1.5 py-0.5 text-xs font-medium">Authorization: Bearer</code>{" "}
+          header on subsequent requests.
+        </p>
+        <p className="mt-6 text-sm font-bold uppercase tracking-wide text-foreground">MQTT topics</p>
+        <pre className="mt-2 overflow-x-auto rounded-md border border-border bg-muted/50 p-4 text-xs leading-relaxed text-foreground">
+          {`# Token form (recommended — what firmware uses)
+iotaps/{token}/telemetry        # device -> broker
+iotaps/{token}/command          # broker -> device
+iotaps/{token}/ack              # device -> broker
+iotaps/{token}/status           # device -> broker (LWT)
 
-      <Card className="mb-8">
-        <CardHeader>
-          <CardTitle className="text-lg">Getting started</CardTitle>
-          <CardDescription>
-            Authenticate to receive a JWT access token and a refresh token, then
-            send the access token as an{" "}
-            <code className="rounded bg-muted px-1 py-0.5 text-xs">Authorization: Bearer</code>{" "}
-            header on subsequent requests.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <p className="mb-2 text-sm font-medium text-foreground">MQTT topics</p>
-          <pre className="overflow-x-auto rounded-md bg-muted p-3 text-xs text-foreground">
-{`iotaps/{org_id}/{device_id}/telemetry   # device -> broker
-iotaps/{org_id}/{device_id}/command     # broker -> device
-iotaps/{org_id}/{device_id}/ack         # device -> broker
-iotaps/{org_id}/{device_id}/status      # device -> broker (LWT)`}
-          </pre>
-        </CardContent>
-      </Card>
+# Org/device form (alternative)
+iotaps/{org_id}/{device_id}/{telemetry|command|ack|status}`}
+        </pre>
+        <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+          Full topic table, payload contracts, and sample clients on the{" "}
+          <Link to="/developers/mqtt-devices" className="font-medium text-primary hover:underline">
+            MQTT & devices
+          </Link>{" "}
+          page.
+        </p>
+      </article>
 
-      <div className="grid gap-6 sm:grid-cols-2">
+      <MarketingPageHeader title="Endpoint reference" subtitle="Representative routes — see OpenAPI in the API for full schemas." />
+
+      <div className="grid gap-4 sm:grid-cols-2">
         {endpointGroups.map((group) => (
-          <Card key={group.title}>
-            <CardHeader>
-              <CardTitle className="text-base">{group.title}</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <ul className="space-y-2 font-mono text-xs">
-                {group.endpoints.map((ep) => (
-                  <li key={`${ep.method} ${ep.path}`} className="flex gap-3">
-                    <span className={`w-12 shrink-0 font-semibold ${methodColor[ep.method] || ""}`}>
-                      {ep.method}
-                    </span>
-                    <span className="text-muted-foreground">{ep.path}</span>
-                  </li>
-                ))}
-              </ul>
-            </CardContent>
-          </Card>
+          <article key={group.title} className="blynk-platform-card p-6">
+            <h3 className="text-base font-bold uppercase tracking-wide">{group.title}</h3>
+            <ul className="mt-4 space-y-2.5 font-mono text-xs">
+              {group.endpoints.map((ep) => (
+                <li key={`${ep.method} ${ep.path}`} className="flex gap-3 border-b border-border/60 pb-2 last:border-0">
+                  <span className={`w-12 shrink-0 font-bold ${methodColor[ep.method] || ""}`}>
+                    {ep.method}
+                  </span>
+                  <span className="text-muted-foreground">{ep.path}</span>
+                </li>
+              ))}
+            </ul>
+          </article>
         ))}
       </div>
-    </PublicPage>
+    </MarketingShell>
   );
 }

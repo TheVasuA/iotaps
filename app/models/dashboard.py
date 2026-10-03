@@ -30,6 +30,9 @@ class Dashboard(Base, TenantMixin, TimestampMixin):
     # public share token (Req 8)
     public_token: Mapped[str | None] = mapped_column(Text, nullable=True, unique=True)
     layout: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    settings: Mapped[dict | None] = mapped_column(
+        JSONB, nullable=False, server_default="'{}'"
+    )
 
 
 class Widget(Base, TenantMixin):

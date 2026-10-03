@@ -1,51 +1,61 @@
 import { useCallback, useEffect, useMemo, useState, useRef } from "react";
+import { Navigate, useLocation, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
-import {
-  Plus,
-  PencilSimple,
-  Check,
-  CircleNotch,
-  Plugs,
-  PlugsConnected,
-  Trash,
-} from "@phosphor-icons/react";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Dialog, DialogBody, DialogFooter } from "@/components/ui/dialog";
+import { CircleNotch } from "@phosphor-icons/react";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import {
   fetchDashboards,
   fetchDashboard,
   createNewDashboard,
-  saveLayout,
   addWidgetToDashboard,
   saveWidget,
   removeDashboard,
   removeWidget,
-  setCurrentLayout,
+  copyDashboard,
+  markDashboardHomepage,
+  saveDashboardSettings,
+  saveDashboardName,
   selectDashboards,
   selectCurrentDashboard,
   selectWidgets,
   selectDashboardsStatus,
   selectDashboardsError,
+  selectDashboardSaving,
+  selectHomepageId,
 } from "@/store/dashboardsSlice";
-import {
-  fetchDevices,
-  selectDevices,
-} from "@/store/devicesSlice";
-import DashboardCanvas from "@/components/dashboard/DashboardCanvas";
-import AddWidgetMenu from "@/components/dashboard/AddWidgetMenu";
+import { fetchDevices, selectDevices } from "@/store/devicesSlice";
+import { selectUser } from "@/store/authSlice";
+import DashboardCanvas, { GRID_COLS } from "@/components/dashboard/DashboardCanvas";
+import DashboardEmptyState from "@/components/dashboard/DashboardEmptyState";
+import DashboardListSidebar from "@/components/dashboard/DashboardListSidebar";
+import DashboardBuilderToolbox from "@/components/dashboard/DashboardBuilderToolbox";
+import DashboardBuilderHeader from "@/components/dashboard/DashboardBuilderHeader";
+import DashboardBuilderFilters from "@/components/dashboard/DashboardBuilderFilters";
+import DashboardDataSourceDialog from "@/components/dashboard/DashboardDataSourceDialog";
+import DashboardAccessDrawer from "@/components/dashboard/DashboardAccessDrawer";
+import DashboardViewToolbar from "@/components/dashboard/DashboardViewToolbar";
 import WidgetSettingsDialog from "@/components/dashboard/WidgetSettingsDialog";
 import { defaultConfigFor, defaultLayoutFor } from "@/lib/widgets";
+import { paletteItem } from "@/lib/widgetPalette";
 import useDashboardTelemetry from "@/lib/useDashboardTelemetry";
-import wsManager from "@/lib/websocket";
 import { issueCommand } from "@/lib/commandsApi";
 import { extractApiError } from "@/lib/authApi";
+import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
+import { Dialog, DialogBody, DialogFooter } from "@/components/ui/dialog";
 
-// Dashboard canvas page (Task 8.2, Req 7). Composes the dashboard selector,
-// the React Grid Layout canvas, the 8 widget types, and the live WebSocket
-// telemetry binding. Edit mode gates drag/drop/resize and widget management so
-// viewing is interaction-safe.
+const MAX_DASHBOARDS = 10;
+
+function nextDashboardName(dashboards) {
+  let name = "New dashboard";
+  let n = 2;
+  const taken = new Set(dashboards.map((d) => d.name.toLowerCase()));
+  while (taken.has(name.toLowerCase())) {
+    name = `New dashboard ${n++}`;
+  }
+  return name;
+}
+
 export default function DashboardPage() {
   const dispatch = useAppDispatch();
   const dashboards = useAppSelector(selectDashboards);
@@ -53,40 +63,63 @@ export default function DashboardPage() {
   const widgets = useAppSelector(selectWidgets);
   const status = useAppSelector(selectDashboardsStatus);
   const error = useAppSelector(selectDashboardsError);
+  const saving = useAppSelector(selectDashboardSaving);
   const devices = useAppSelector(selectDevices);
+  const user = useAppSelector(selectUser);
+  const homepageId = useAppSelector(selectHomepageId);
+  const location = useLocation();
+  const navigate = useNavigate();
+  const isHomeRoute = location.pathname === "/homepage";
 
   const [selectedId, setSelectedId] = useState(null);
   const [editing, setEditing] = useState(false);
-  const [addOpen, setAddOpen] = useState(false);
+  const [editDraftName, setEditDraftName] = useState("");
+  const [editSessionNew, setEditSessionNew] = useState(false);
+  const canvasHostRef = useRef(null);
   const [configWidget, setConfigWidget] = useState(null);
-  const [wsStatus, setWsStatus] = useState(wsManager.status);
-  const [createOpen, setCreateOpen] = useState(false);
-  const [createName, setCreateName] = useState("");
+  const [sourceOpen, setSourceOpen] = useState(false);
+  const [accessOpen, setAccessOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
-  const createInputRef = useRef(null);
 
-  // Load the dashboard list and device list (for widget binding) once.
   useEffect(() => {
     dispatch(fetchDashboards());
     dispatch(fetchDevices({}));
   }, [dispatch]);
 
-  // Auto-select the first dashboard once the list loads.
+  const openedHome = useRef(false);
   useEffect(() => {
-    if (!selectedId && dashboards.length > 0) {
-      setSelectedId(dashboards[0].id);
+    if (!user?.id || dashboards.length === 0) return;
+    if (isHomeRoute) {
+      if (homepageId) setSelectedId(homepageId);
+      return;
     }
-  }, [dashboards, selectedId]);
+    if (openedHome.current) return;
+    openedHome.current = true;
+    const focus = location.state?.dashboardId;
+    const focused = focus && dashboards.some((item) => item.id === focus) ? focus : null;
+    setSelectedId(focused || homepageId || dashboards[0].id);
+  }, [dashboards, user?.id, isHomeRoute, homepageId, location.state?.dashboardId]);
 
-  // Load the selected dashboard's widgets + layout.
   useEffect(() => {
     if (selectedId) dispatch(fetchDashboard(selectedId));
   }, [dispatch, selectedId]);
 
-  // Reflect WebSocket connection status in the header indicator.
-  useEffect(() => wsManager.onStatus(setWsStatus), []);
+  useEffect(() => {
+    if (editing && current) {
+      setEditDraftName(current.name || "");
+    }
+  }, [editing, current?.id, current?.name]);
 
-  // Devices referenced by the current dashboard's widgets -> telemetry channels.
+  const settings = current?.settings || {};
+  const timeRange = settings.time_range || "1w";
+  const selectedDeviceIds = Array.isArray(settings.device_ids) ? settings.device_ids : null;
+  const sourceLabel =
+    selectedDeviceIds == null
+      ? "All devices in this workspace"
+      : selectedDeviceIds.length === 1
+        ? "1 device"
+        : `${selectedDeviceIds.length} devices`;
+
   const boundDeviceIds = useMemo(() => {
     const ids = new Set();
     for (const w of widgets) {
@@ -98,54 +131,84 @@ export default function DashboardPage() {
 
   useDashboardTelemetry(boundDeviceIds);
 
-  // --- Dashboard actions -------------------------------------------------
-  const handleCreate = useCallback(async () => {
-    setCreateName("");
-    setCreateOpen(true);
-  }, []);
+  const persistSettings = useCallback(
+    (patch) => {
+      if (!current) return;
+      dispatch(
+        saveDashboardSettings({
+          id: current.id,
+          settings: { ...settings, ...patch },
+        })
+      );
+    },
+    [dispatch, current, settings]
+  );
 
-  const handleCreateConfirm = useCallback(async () => {
-    const name = createName.trim();
+  const startNewDashboard = useCallback(async () => {
+    if (dashboards.length >= MAX_DASHBOARDS) {
+      toast.error("Dashboard limit reached — upgrade for more");
+      return;
+    }
+    const name = nextDashboardName(dashboards);
+    const action = await dispatch(createNewDashboard({ name }));
+    if (createNewDashboard.fulfilled.match(action)) {
+      setSelectedId(action.payload.id);
+      setEditDraftName(action.payload.name);
+      setEditSessionNew(true);
+      setEditing(true);
+    } else {
+      toast.error(action.payload?.message || "Failed to create dashboard");
+    }
+  }, [dispatch, dashboards]);
+
+  const handleCreate = useCallback(() => {
+    startNewDashboard();
+  }, [startNewDashboard]);
+
+  const handleSaveEdit = useCallback(async () => {
+    if (!current) return;
+    const name = editDraftName.trim();
     if (!name) {
       toast.error("Dashboard name is required");
       return;
     }
-    // Prevent duplicate names
-    if (dashboards.some((d) => d.name.toLowerCase() === name.toLowerCase())) {
+    if (dashboards.some((d) => d.id !== current.id && d.name.toLowerCase() === name.toLowerCase())) {
       toast.error("A dashboard with this name already exists");
       return;
     }
-    const action = await dispatch(createNewDashboard({ name }));
-    if (createNewDashboard.fulfilled.match(action)) {
-      setSelectedId(action.payload.id);
-      setEditing(true);
-      setCreateOpen(false);
-      toast.success("Dashboard created");
-    } else {
-      toast.error(action.payload?.message || "Failed to create dashboard");
+    if (name !== current.name) {
+      const action = await dispatch(saveDashboardName({ id: current.id, name }));
+      if (!saveDashboardName.fulfilled.match(action)) {
+        toast.error(action.payload?.message || "Failed to save name");
+        return;
+      }
     }
-  }, [dispatch, createName, dashboards]);
+    setEditSessionNew(false);
+    setEditing(false);
+    toast.success("Dashboard saved");
+  }, [dispatch, current, editDraftName, dashboards]);
 
-  const handleDelete = useCallback(async () => {
-    if (!current) return;
-    setDeleteOpen(true);
-  }, [current]);
-
-  const handleDeleteConfirm = useCallback(async () => {
-    if (!current) return;
-    const action = await dispatch(removeDashboard(current.id));
-    if (removeDashboard.fulfilled.match(action)) {
-      setSelectedId(null);
+  const handleCancelEdit = useCallback(async () => {
+    if (!current) {
       setEditing(false);
-      setDeleteOpen(false);
-      toast.success("Dashboard deleted");
-    } else {
-      toast.error(action.payload?.message || "Failed to delete dashboard");
+      return;
     }
-  }, [dispatch, current]);
+    if (editSessionNew && widgets.length === 0) {
+      const id = current.id;
+      const action = await dispatch(removeDashboard(id));
+      if (removeDashboard.fulfilled.match(action)) {
+        setSelectedId(null);
+        setEditing(false);
+        setEditSessionNew(false);
+      }
+      return;
+    }
+    setEditDraftName(current.name);
+    setEditSessionNew(false);
+    setEditing(false);
+  }, [dispatch, current, editSessionNew, widgets.length]);
 
-  // Persist reorder from drag-and-drop
-  const handleReorder = useCallback(
+  const handleLayoutChange = useCallback(
     (layoutUpdates) => {
       if (!current || !editing) return;
       for (const item of layoutUpdates) {
@@ -162,20 +225,41 @@ export default function DashboardPage() {
   );
 
   const handleAddWidget = useCallback(
-    async (type) => {
+    async (paletteId, dropPos = null) => {
       if (!current) return;
-      const config = defaultConfigFor(type);
-      const layout = defaultLayoutFor(type, "new");
-      delete layout.i;
+      const item = paletteItem(paletteId);
+      const type = item?.type || paletteId;
+      const config = defaultConfigFor(type, {
+        title: item?.title,
+        variant: item?.preview,
+        paletteId: item?.id,
+        upgrade: item?.upgrade || undefined,
+        ...(item?.id === "device_table" || item?.preview === "table"
+          ? {
+              devicesPerPage: 10,
+              defaultSortColumn: "name",
+              defaultSortDirection: "asc",
+              columns: [],
+              selectedDeviceIds: "all",
+            }
+          : {}),
+      });
+      const grid = defaultLayoutFor(type, "new");
+      delete grid.i;
+      const w = Math.min(GRID_COLS, item?.layout?.w || grid.w || 3);
+      const h = item?.layout?.h || grid.h || 2;
 
-      // Find the next available position: place at max bottom so horizontal
-      // compaction fills the first available row slot automatically.
-      let placeY = 0;
-      if (widgets.length > 0) {
-        for (const w of widgets) {
-          const wl = w.layout || {};
+      let targetX = 0;
+      let targetY = 0;
+
+      if (dropPos && Number.isFinite(dropPos.x) && Number.isFinite(dropPos.y)) {
+        targetX = Math.max(0, Math.min(GRID_COLS - w, dropPos.x));
+        targetY = Math.max(0, dropPos.y);
+      } else {
+        for (const widget of widgets) {
+          const wl = widget.layout || {};
           const bottom = (wl.y || 0) + (wl.h || 2);
-          if (bottom > placeY) placeY = bottom;
+          if (bottom > targetY) targetY = bottom;
         }
       }
 
@@ -184,11 +268,11 @@ export default function DashboardPage() {
           dashboardId: current.id,
           type,
           config,
-          layout: { x: 0, y: placeY, w: layout.w, h: layout.h },
+          layout: { x: targetX, y: targetY, w, h },
         })
       );
       if (addWidgetToDashboard.fulfilled.match(action)) {
-        setConfigWidget(action.payload);
+        // Do not open settings after drop, as requested by user
         toast.success("Widget added");
       } else {
         toast.error(action.payload?.message || "Failed to add widget");
@@ -211,19 +295,86 @@ export default function DashboardPage() {
     [dispatch, current]
   );
 
+  const handleDuplicateWidget = useCallback(
+    async (widget) => {
+      if (!current || !widget) return;
+      const layout = widget.layout || {};
+      const action = await dispatch(
+        addWidgetToDashboard({
+          dashboardId: current.id,
+          type: widget.type,
+          config: { ...(widget.config || {}) },
+          layout: {
+            x: Math.max(0, Math.min(GRID_COLS - Math.min(GRID_COLS, layout.w || 3), layout.x || 0)),
+            y: (layout.y || 0) + (layout.h || 2),
+            w: Math.min(GRID_COLS, layout.w || 3),
+            h: layout.h || 2,
+          },
+        })
+      );
+      if (addWidgetToDashboard.fulfilled.match(action)) {
+        setConfigWidget(null);
+        toast.success("Widget duplicated");
+      } else {
+        toast.error(action.payload?.message || "Failed to duplicate widget");
+      }
+    },
+    [dispatch, current]
+  );
+
   const handleDeleteWidget = useCallback(
     async (widget) => {
       if (!current) return;
-      const confirmed = window.confirm(`Delete this widget?`);
-      if (!confirmed) return;
+      if (!window.confirm("Delete this widget?")) return;
       const action = await dispatch(
         removeWidget({ dashboardId: current.id, widgetId: widget.id })
       );
-      if (removeWidget.fulfilled.match(action)) {
-        toast.success("Widget deleted");
-      } else {
-        toast.error(action.payload?.message || "Failed to delete widget");
+      if (removeWidget.fulfilled.match(action)) toast.success("Widget deleted");
+      else toast.error(action.payload?.message || "Failed to delete widget");
+    },
+    [dispatch, current]
+  );
+
+  const handleRotateWidget = useCallback(
+    (widget) => {
+      if (!current || !widget) return;
+      const layout = widget.layout || {};
+      const curW = layout.w || 3;
+      const curH = layout.h || 2;
+      const newW = Math.max(1, Math.min(GRID_COLS, curH));
+      const newH = Math.max(1, curW);
+      const newX = Math.max(0, Math.min(GRID_COLS - newW, layout.x || 0));
+
+      const config = widget.config || {};
+      const changes = {
+        layout: {
+          ...layout,
+          x: newX,
+          w: newW,
+          h: newH,
+        },
+      };
+
+      if (config.levelPosition) {
+        changes.config = {
+          ...config,
+          levelPosition: config.levelPosition === "vertical" ? "horizontal" : "vertical",
+        };
+      } else if (config.orientation) {
+        changes.config = {
+          ...config,
+          orientation: config.orientation === "vertical" ? "horizontal" : "vertical",
+        };
       }
+
+      dispatch(
+        saveWidget({
+          dashboardId: current.id,
+          widgetId: widget.id,
+          changes,
+        })
+      );
+      toast.success("Widget rotated");
     },
     [dispatch, current]
   );
@@ -248,8 +399,75 @@ export default function DashboardPage() {
     [dispatch, current, configWidget]
   );
 
-  // Control-widget command emission. Sends the command to the backend which
-  // publishes it to the device via MQTT (Req 9.1, 9.2).
+  const orgLabel = useMemo(() => {
+    const name = user?.organization_name || "My organization";
+    const short = user?.org_id
+      ? String(user.org_id).replace(/-/g, "").slice(-6).toUpperCase()
+      : "";
+    return short ? `${name} - ${short}` : name;
+  }, [user]);
+
+  const handleDuplicate = useCallback(async () => {
+    if (!current) return;
+    if (dashboards.length >= MAX_DASHBOARDS) {
+      toast.error("Dashboard limit reached — upgrade for more");
+      return;
+    }
+    const action = await dispatch(copyDashboard(current.id));
+    if (copyDashboard.fulfilled.match(action)) {
+      setEditing(false);
+      if (isHomeRoute) {
+        navigate("/dashboard", { state: { dashboardId: action.payload.id } });
+      } else {
+        setSelectedId(action.payload.id);
+      }
+      toast.success("Dashboard duplicated");
+    } else {
+      toast.error(action.payload?.message || "Failed to duplicate dashboard");
+    }
+  }, [dispatch, current, dashboards.length, isHomeRoute, navigate]);
+
+  const handleSetHomepage = useCallback(async () => {
+    if (!current || !user?.id) return;
+    const action = await dispatch(
+      markDashboardHomepage({ id: current.id, userId: user.id, enabled: true })
+    );
+    if (markDashboardHomepage.fulfilled.match(action)) {
+      toast.success("Homepage updated");
+    } else {
+      toast.error(action.payload?.message || "Failed to set homepage");
+    }
+  }, [dispatch, current, user?.id]);
+
+  const handleClearHomepage = useCallback(async () => {
+    if (!current || !user?.id) return;
+    const action = await dispatch(
+      markDashboardHomepage({ id: current.id, userId: user.id, enabled: false })
+    );
+    if (markDashboardHomepage.fulfilled.match(action)) {
+      toast.success("Homepage removed");
+      if (isHomeRoute) navigate("/dashboard", { replace: true });
+    } else {
+      toast.error(action.payload?.message || "Failed to clear homepage");
+    }
+  }, [dispatch, current, user?.id, isHomeRoute, navigate]);
+
+  const handleDeleteConfirm = useCallback(async () => {
+    if (!current) return;
+    const id = current.id;
+    const action = await dispatch(removeDashboard(id));
+    if (removeDashboard.fulfilled.match(action)) {
+      const rest = dashboards.filter((item) => item.id !== id);
+      setEditing(false);
+      setDeleteOpen(false);
+      if (isHomeRoute) navigate("/dashboard", { replace: true });
+      else setSelectedId(rest[0]?.id || null);
+      toast.success("Dashboard deleted");
+    } else {
+      toast.error(action.payload?.message || "Failed to delete dashboard");
+    }
+  }, [dispatch, current, dashboards, isHomeRoute, navigate]);
+
   const handleCommand = useCallback(async (cmd) => {
     if (!cmd.deviceId) {
       toast.error("No device bound to this widget");
@@ -262,113 +480,148 @@ export default function DashboardPage() {
         target: cmd.command || undefined,
       });
       if (result.status === "QUEUED") {
-        toast.info("Command queued — device is offline, will execute on reconnect");
+        toast.info("Command queued — device offline");
       } else {
-        toast.success("Command sent to device");
+        toast.success("Command sent");
       }
     } catch (err) {
       toast.error(extractApiError(err).message || "Failed to send command");
     }
   }, []);
 
-  // --- Render ------------------------------------------------------------
-  return (
-    <section className="mx-auto max-w-7xl space-y-4 px-2">
-      <header className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-card/80 px-4 py-3 shadow-sm backdrop-blur">
-        <div className="flex items-center gap-3">
-          <h1 className="text-xl font-bold text-foreground">📊 Dashboards</h1>
-          {dashboards.length > 0 ? (
-            <select
-              aria-label="Select dashboard"
-              value={selectedId || ""}
-              onChange={(e) => {
-                setSelectedId(e.target.value || null);
-                setEditing(false);
-              }}
-              className="h-8 rounded-lg border border-input bg-background px-3 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            >
-              {dashboards.map((d) => (
-                <option key={d.id} value={d.id}>
-                  {d.name}
-                </option>
-              ))}
-            </select>
-          ) : null}
-          <span
-            className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium"
-            title={`Realtime: ${wsStatus}`}
-          >
-            {wsStatus === "open" ? (
-              <PlugsConnected size={12} className="text-emerald-500" />
-            ) : (
-              <Plugs size={12} className="text-muted-foreground" />
-            )}
-            {wsStatus === "open" ? "Live" : wsStatus}
-          </span>
-        </div>
-        <div className="flex items-center gap-2">
-          {current ? (
-            <>
-              {editing ? (
-                <Button onClick={() => setAddOpen(true)} size="sm" variant="outline" className="rounded-lg">
-                  <Plus size={14} />
-                  Add widget
-                </Button>
-              ) : null}
-              <Button
-                size="sm"
-                variant={editing ? "default" : "outline"}
-                className="rounded-lg"
-                onClick={() => setEditing((e) => !e)}
-              >
-                {editing ? <Check size={14} /> : <PencilSimple size={14} />}
-                {editing ? "Done" : "Edit"}
-              </Button>
-              <Button variant="ghost" size="icon" onClick={handleDelete} title="Delete dashboard" className="h-8 w-8 rounded-lg text-muted-foreground hover:text-destructive">
-                <Trash size={14} />
-              </Button>
-            </>
-          ) : null}
-          <Button onClick={handleCreate} size="sm" className="rounded-lg">
-            <Plus size={14} />
-            New dashboard
-          </Button>
-        </div>
-      </header>
+  const loading = (status === "loading" || status === "idle") && dashboards.length === 0 && !editing;
 
-      {status === "loading" && !current ? (
-        <div className="flex min-h-[40vh] items-center justify-center text-muted-foreground">
-          <CircleNotch size={22} className="animate-spin" />
-        </div>
-      ) : status === "failed" && !current ? (
-        <div className="flex min-h-[40vh] items-center justify-center text-destructive">
-          {error || "Failed to load dashboards"}
-        </div>
-      ) : !current ? (
-        <div className="flex min-h-[40vh] flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-border text-muted-foreground">
-          <p>No dashboards yet.</p>
-          <Button onClick={handleCreate}>
-            <Plus size={16} />
-            Create your first dashboard
-          </Button>
+  if (isHomeRoute && !homepageId && status === "succeeded") {
+    return <Navigate to="/dashboard" replace />;
+  }
+
+  if (loading) {
+    return (
+      <div className="dash-shell flex min-h-[calc(100dvh-3.75rem)] items-center justify-center">
+        <CircleNotch size={28} className="animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  if (status === "failed" && dashboards.length === 0) {
+    return (
+      <div className="dash-shell flex min-h-[calc(100dvh-3.75rem)] items-center justify-center text-destructive">
+        {error || "Failed to load dashboards"}
+      </div>
+    );
+  }
+
+  const inBuilder = editing && current;
+
+  if (dashboards.length === 0 && !inBuilder) {
+    return (
+      <div className="dash-shell flex min-h-[calc(100dvh-3.75rem)] flex-col">
+        <DashboardEmptyState onCreate={handleCreate} />
+      </div>
+    );
+  }
+
+  return (
+    <div className={cn("dash-shell flex h-full min-h-0 overflow-hidden", inBuilder && "dash-shell-builder")}>
+      {inBuilder ? (
+        <div className="dash-builder-layout flex min-h-0 min-w-0 flex-1">
+          <DashboardBuilderToolbox onAdd={handleAddWidget} className="hidden lg:flex" blynk />
+          <div className="dash-builder-main flex min-w-0 flex-1 flex-col">
+            <DashboardBuilderHeader
+              name={editDraftName}
+              onNameChange={setEditDraftName}
+              onSave={handleSaveEdit}
+              onCancel={handleCancelEdit}
+              saving={saving}
+            />
+            <DashboardBuilderFilters
+              sourceLabel={sourceLabel}
+              onChangeSource={() => setSourceOpen(true)}
+              timeRange={timeRange}
+              onTimeRangeChange={(id) => persistSettings({ time_range: id })}
+              onManageAccess={() => setAccessOpen(true)}
+            />
+            <div
+              ref={canvasHostRef}
+              className="dash-builder-body flex min-h-0 flex-1 flex-col overflow-hidden"
+            >
+              <DashboardBuilderToolbox onAdd={handleAddWidget} className="lg:hidden" blynk />
+              <div className="flex min-h-0 flex-1 flex-col overflow-auto bg-slate-50/50">
+                <DashboardCanvas
+                  widgets={widgets}
+                  editing
+                  timeRange={timeRange}
+                  onLayoutChange={handleLayoutChange}
+                  onCommand={handleCommand}
+                  onTogglePin={handleTogglePin}
+                  onConfigure={setConfigWidget}
+                  onDeleteWidget={handleDeleteWidget}
+                  onDuplicateWidget={handleDuplicateWidget}
+                  onRotateWidget={handleRotateWidget}
+                  blynkGrid
+                  onDropWidget={handleAddWidget}
+                  className="min-h-full flex-1 min-w-[960px] w-full"
+                />
+              </div>
+            </div>
+          </div>
         </div>
       ) : (
-        <DashboardCanvas
-          widgets={widgets}
-          editing={editing}
-          onReorder={handleReorder}
-          onCommand={handleCommand}
-          onTogglePin={handleTogglePin}
-          onConfigure={setConfigWidget}
-          onDeleteWidget={handleDeleteWidget}
-        />
+        <>
+          {isHomeRoute ? null : (
+            <DashboardListSidebar
+              dashboards={dashboards}
+              selectedId={selectedId}
+              onSelect={(id) => {
+                setSelectedId(id);
+                setEditing(false);
+              }}
+              onCreate={handleCreate}
+              maxDashboards={MAX_DASHBOARDS}
+            />
+          )}
+          <div className="flex min-w-0 flex-1 flex-col">
+            {current ? (
+              <DashboardViewToolbar
+                title={current.name}
+                onEdit={() => setEditing(true)}
+                onDuplicate={handleDuplicate}
+                onManageAccess={() => setAccessOpen(true)}
+                onSetHomepage={handleSetHomepage}
+                onClearHomepage={handleClearHomepage}
+                isHomepage={homepageId === current.id}
+                onDelete={() => setDeleteOpen(true)}
+                timeRange={timeRange}
+                onTimeRangeChange={(id) => persistSettings({ time_range: id })}
+                orgLabel={orgLabel}
+              />
+            ) : (
+              <div className="flex flex-1 items-center justify-center text-muted-foreground">
+                Select a dashboard
+              </div>
+            )}
+            <div ref={canvasHostRef} className="dash-main flex min-h-0 flex-1 flex-col">
+              <div className="min-h-0 flex-1 p-6">
+                {current ? (
+                  <DashboardCanvas
+                    widgets={widgets}
+                    editing={false}
+                    timeRange={timeRange}
+                    onLayoutChange={handleLayoutChange}
+                    onCommand={handleCommand}
+                    onTogglePin={handleTogglePin}
+                    onConfigure={setConfigWidget}
+                    onDeleteWidget={handleDeleteWidget}
+                    onDuplicateWidget={handleDuplicateWidget}
+                    onRotateWidget={handleRotateWidget}
+                  />
+                ) : null}
+              </div>
+            </div>
+          </div>
+        </>
       )}
 
-      <AddWidgetMenu
-        open={addOpen}
-        onClose={() => setAddOpen(false)}
-        onAdd={handleAddWidget}
-      />
       <WidgetSettingsDialog
         open={!!configWidget}
         widget={configWidget}
@@ -377,41 +630,46 @@ export default function DashboardPage() {
         onSave={handleSaveConfig}
       />
 
-      {/* Create dashboard dialog */}
-      <Dialog
-        open={createOpen}
-        onClose={() => setCreateOpen(false)}
-        title="Create Dashboard"
-        description="Give your new dashboard a name."
-      >
-        <DialogBody>
-          <Input
-            ref={createInputRef}
-            placeholder="Dashboard name"
-            value={createName}
-            onChange={(e) => setCreateName(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && handleCreateConfirm()}
-            autoFocus
-          />
-        </DialogBody>
-        <DialogFooter>
-          <Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button>
-          <Button onClick={handleCreateConfirm}>Create</Button>
-        </DialogFooter>
-      </Dialog>
+      <DashboardDataSourceDialog
+        open={sourceOpen}
+        devices={devices}
+        selectedIds={selectedDeviceIds}
+        onClose={() => setSourceOpen(false)}
+        onSave={(ids) => {
+          persistSettings({
+            org_scope: ids == null ? "all" : "selected",
+            device_ids: ids,
+          });
+          setSourceOpen(false);
+        }}
+      />
 
-      {/* Delete dashboard confirmation */}
+      <DashboardAccessDrawer
+        open={accessOpen}
+        dashboardId={current?.id}
+        onClose={() => setAccessOpen(false)}
+      />
+
       <Dialog
         open={deleteOpen}
         onClose={() => setDeleteOpen(false)}
-        title="Delete Dashboard"
-        description={`Are you sure you want to delete "${current?.name}"? This will remove all widgets and cannot be undone.`}
+        title="Delete dashboard"
+        description="This removes the dashboard and every widget on it."
       >
+        <DialogBody>
+          <p className="text-sm text-muted-foreground">
+            {current?.name ? `“${current.name}” will be deleted.` : "This dashboard will be deleted."}
+          </p>
+        </DialogBody>
         <DialogFooter>
-          <Button variant="outline" onClick={() => setDeleteOpen(false)}>Cancel</Button>
-          <Button variant="destructive" onClick={handleDeleteConfirm}>Delete</Button>
+          <Button variant="outline" onClick={() => setDeleteOpen(false)}>
+            Cancel
+          </Button>
+          <Button variant="destructive" onClick={handleDeleteConfirm}>
+            Delete
+          </Button>
         </DialogFooter>
       </Dialog>
-    </section>
+    </div>
   );
 }

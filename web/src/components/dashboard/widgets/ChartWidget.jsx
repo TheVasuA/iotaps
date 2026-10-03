@@ -2,12 +2,12 @@ import { useMemo } from "react";
 import ReactECharts from "echarts-for-react";
 import { useAppSelector } from "@/store/hooks";
 import { selectSeries } from "@/store/dashboardsSlice";
-import { downsampleSeries } from "@/lib/widgets";
+import { downsampleSeries, filterSeriesByTimeRange } from "@/lib/widgets";
 import { getChartTheme } from "@/lib/chartTheme";
 
 // Professional line/bar chart — minimal grid padding, gradient fill, smooth
 // line, and fully theme-aware colours (role theme + light/dark mode).
-export default function ChartWidget({ widget }) {
+export default function ChartWidget({ widget, timeRange }) {
   const config = widget.config || {};
   const deviceId = config.deviceId;
   const metric = config.metric;
@@ -17,7 +17,8 @@ export default function ChartWidget({ widget }) {
 
   const option = useMemo(() => {
     const theme = getChartTheme();
-    const points = downsampleSeries(series, maxPoints);
+    const scoped = filterSeriesByTimeRange(series, timeRange);
+    const points = downsampleSeries(scoped, maxPoints);
     const data = points.map((p) => [p.ts, p.value]);
     const isBar = widget.type === "bar";
 
@@ -72,7 +73,7 @@ export default function ChartWidget({ widget }) {
         },
       ],
     };
-  }, [series, maxPoints, widget.type, metric]);
+  }, [series, maxPoints, widget.type, metric, timeRange]);
 
   if (!deviceId || !metric) {
     return <UnboundNotice />;

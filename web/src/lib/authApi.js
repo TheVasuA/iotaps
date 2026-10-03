@@ -1,4 +1,4 @@
-import apiClient from "@/lib/apiClient";
+import apiClient, { API_BASE_URL } from "@/lib/apiClient";
 
 // Auth API surface (design.md "Auth" block). Each function maps 1:1 to a
 // backend endpoint and returns the parsed response body. Token persistence and
@@ -39,14 +39,24 @@ export function principalFromToken(accessToken, email) {
     org_id: claims.org_id,
     role: claims.role,
     email: email || claims.email || null,
+    account_type: claims.account_type || "individual",
+    organization_name: claims.org_name || "",
   };
 }
 
-export async function register({ email, password, referralCode }) {
+export async function register({
+  email,
+  password,
+  referralCode,
+  accountType = "individual",
+  organizationName,
+}) {
   const { data } = await apiClient.post("/auth/register", {
     email,
     password,
     referral_code: referralCode || null,
+    account_type: accountType,
+    organization_name: organizationName || null,
   });
   return data; // { user }
 }
@@ -60,9 +70,12 @@ export async function login({ email, password, otp }) {
   return data; // { access_token, refresh_token, token_type }
 }
 
-export async function loginWithGoogle({ idToken }) {
+export async function loginWithGoogle({ idToken, accountType, organizationName, otp }) {
   const { data } = await apiClient.post("/auth/oauth/google", {
     id_token: idToken,
+    account_type: accountType || null,
+    organization_name: organizationName || null,
+    ...(otp ? { otp } : {}),
   });
   return data; // { access_token, refresh_token }
 }
@@ -90,7 +103,8 @@ export async function enable2fa() {
 }
 
 export async function verify2fa({ otp }) {
-  await apiClient.post("/auth/2fa/verify", { otp });
+  const { data } = await apiClient.post("/auth/2fa/verify", { otp });
+  return data;
 }
 
 /** Pull a human-readable message + error_code out of an axios error. */
@@ -100,6 +114,16 @@ export function extractApiError(err) {
     return {
       code: body.error_code || "error",
       message: body.message || "Something went wrong",
+    };
+  }
+  if (err?.code === "ERR_NETWORK" || !err?.response) {
+    const hint =
+      typeof window !== "undefined"
+        ? ` (${API_BASE_URL.replace(/^https?:\/\//, "")})`
+        : "";
+    return {
+      code: "network_error",
+      message: `Could not reach the server${hint}. Check your connection or try again in a moment.`,
     };
   }
   return { code: "network_error", message: "Could not reach the server" };

@@ -78,3 +78,9 @@ export async function listTemplates(category) {
   const { data } = await apiClient.get("/templates", { params });
   return data; // [template]
 }
+
+/** Fetch one template including rules_def / dashboard_def (Req 11.2). */
+export async function getTemplate(id) {
+  const { data } = await apiClient.get(`/templates/${id}`);
+  return data.template ?? data;
+}

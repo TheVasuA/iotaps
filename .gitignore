@@ -25,6 +25,13 @@ node_modules/
 web/dist/
 web/.vite/
 
+# Regenerated from web/public/marketing/*.jpg by web/scripts/optimize-images.mjs
+# (run `npm run images`, or `npm run build` which starts with it). The 8 source
+# JPEGs are committed; their avif/webp/jpg variants and the manifest they
+# produce are build output.
+web/public/marketing/optimized/
+web/src/lib/marketingImages.generated.js
+
 # IDE
 .vscode/
 .idea/

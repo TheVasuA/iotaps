@@ -1,4 +1,5 @@
 import axios from "axios";
+import { resolveApiBaseUrl } from "@/lib/resolveApiBase";
 
 // Centralized API client for the IoTAPS REST API (design: /api/v1).
 //
@@ -46,7 +47,7 @@ export const tokenStore = {
   },
 };
 
-export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "/api/v1";
+export const API_BASE_URL = resolveApiBaseUrl();
 
 const apiClient = axios.create({
   baseURL: API_BASE_URL,
@@ -65,15 +66,10 @@ apiClient.interceptors.request.use((config) => {
 // Single-flight refresh: queue concurrent 401s behind one refresh call.
 let refreshPromise = null;
 
+import { refreshAccessToken as rotateRefreshToken } from "@/lib/sessionRefresh";
+
 async function refreshAccessToken() {
-  const refresh = tokenStore.getRefresh();
-  if (!refresh) throw new Error("no_refresh_token");
-  // Use a bare axios call to avoid recursive interceptors.
-  const { data } = await axios.post(`${API_BASE_URL}/auth/refresh`, {
-    refresh_token: refresh,
-  });
-  tokenStore.set(data.access_token, data.refresh_token);
-  return data.access_token;
+  return rotateRefreshToken();
 }
 
 apiClient.interceptors.response.use(

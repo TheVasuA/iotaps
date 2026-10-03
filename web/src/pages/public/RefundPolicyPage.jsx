@@ -1,4 +1,4 @@
-import { PublicPage, PageHeader, Prose } from "@/components/public/PublicPage";
+import { MarketingShell, MarketingProse } from "@/components/public/PublicPage";
 
 // Public Refund Policy page (Task 21.1, Req 31.1). Reflects the 14-day
 // money-back guarantee enforced by the billing service (Req 17.5, 17.7).
@@ -31,9 +31,13 @@ const sections = [
 
 export default function RefundPolicyPage() {
   return (
-    <PublicPage>
-      <PageHeader title="Refund Policy" subtitle="Our money-back guarantee and how refunds work." />
-      <Prose sections={sections} />
-    </PublicPage>
+    <MarketingShell
+      eyebrow="Legal"
+      title="Refund Policy"
+      subtitle="Our money-back guarantee and how refunds work."
+      showCta={false}
+    >
+      <MarketingProse sections={sections} />
+    </MarketingShell>
   );
 }

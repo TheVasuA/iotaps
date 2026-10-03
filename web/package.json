@@ -6,7 +6,11 @@
   "description": "IoTAPS frontend SPA (React + Vite, Tailwind, shadcn/ui, Redux Toolkit)",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "predev": "node scripts/optimize-images.mjs || node -e \"const fs=require('fs');const p='src/lib/marketingImages.generated.js';if(!fs.existsSync(p)){fs.writeFileSync(p,'// AUTO-GENERATED fallback: web/public/marketing JPEG sources were unavailable at predev, so no optimized variants or manifest were built. Plain /marketing/*.jpg fallbacks still render.\\nexport const marketingImageManifest = {};\\n');console.log('[predev] wrote empty marketingImages.generated.js (sources missing); run npm run images once public/marketing/*.jpg exist')}else{console.log('[predev] images manifest kept as-is')}\"",
+    "build": "node scripts/optimize-images.mjs && vite build && node scripts/generate-seo.mjs --out dist && node scripts/prerender.mjs --out dist",
+    "images": "node scripts/optimize-images.mjs",
+    "seo": "node scripts/generate-seo.mjs --out dist && node scripts/prerender.mjs --out dist",
+    "prerender": "node scripts/prerender.mjs --out dist",
     "preview": "vite preview",
     "lint": "eslint .",
     "test": "vitest run",
@@ -50,6 +54,7 @@
     "fast-check": "^3.23.1",
     "globals": "^15.12.0",
     "postcss": "^8.4.49",
+    "sharp": "^0.35.5",
     "tailwindcss": "^3.4.14",
     "vite": "^5.4.10",
     "vitest": "^2.1.8"

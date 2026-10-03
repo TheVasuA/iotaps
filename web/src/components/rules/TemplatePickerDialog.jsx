@@ -7,14 +7,30 @@ import { cn } from "@/lib/utils";
 // template catalog (loaded by the parent into `templates`), lets the user pick
 // one, and reports the choice via `onInstantiate(templateId)`. The parent calls
 // POST /rules/from-template and refreshes the rule list.
+const COPY = {
+  create: {
+    title: "Create rule from template",
+    description: "Pick a pre-built template to start a new rule chain.",
+    confirm: "Create rule",
+  },
+  import: {
+    title: "Import template into flow",
+    description:
+      "Replace the current canvas with the first rule graph from this template. Save afterward to persist.",
+    confirm: "Import into flow",
+  },
+};
+
 export default function TemplatePickerDialog({
   open,
   templates,
   loading,
   onClose,
   onInstantiate,
+  mode = "create",
 }) {
   const [selectedId, setSelectedId] = useState(null);
+  const copy = COPY[mode] || COPY.create;
 
   useEffect(() => {
     if (open) setSelectedId(null);
@@ -26,8 +42,8 @@ export default function TemplatePickerDialog({
     <Dialog
       open={open}
       onClose={onClose}
-      title="Create rule from template"
-      description="Pick a pre-built template to instantiate a new rule."
+      title={copy.title}
+      description={copy.description}
       className="max-w-2xl"
     >
       <DialogBody className="max-h-[60vh] space-y-5 overflow-y-auto">
@@ -79,7 +95,7 @@ export default function TemplatePickerDialog({
           disabled={!selectedId}
           onClick={() => selectedId && onInstantiate?.(selectedId)}
         >
-          Create rule
+          {copy.confirm}
         </Button>
       </DialogFooter>
     </Dialog>

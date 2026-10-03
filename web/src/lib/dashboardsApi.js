@@ -35,6 +35,7 @@ export async function updateDashboard(id, changes = {}) {
   const body = {};
   if ("name" in changes) body.name = changes.name;
   if ("layout" in changes) body.layout = changes.layout;
+  if ("settings" in changes) body.settings = changes.settings;
   const { data } = await apiClient.patch(`/dashboards/${id}`, body);
   return data.dashboard;
 }
@@ -75,6 +76,36 @@ export async function shareDashboard(id) {
 /** Revoke a dashboard's public link (Req 8.3). */
 export async function unshareDashboard(id) {
   await apiClient.delete(`/dashboards/${id}/share`);
+}
+
+/** Workspace members and who can view or edit this dashboard. */
+export async function getDashboardAccess(id) {
+  const { data } = await apiClient.get(`/dashboards/${id}/access`);
+  return data;
+}
+
+/** Replace viewer and editor grants for this dashboard. */
+export async function saveDashboardAccess(id, { viewers, editors }) {
+  const { data } = await apiClient.put(`/dashboards/${id}/access`, { viewers, editors });
+  return data;
+}
+
+/** Copy a dashboard and its widgets. */
+export async function duplicateDashboard(id) {
+  const { data } = await apiClient.post(`/dashboards/${id}/duplicate`);
+  return data.dashboard;
+}
+
+/** Make this dashboard the one that opens first for the current user. */
+export async function setDashboardHomepage(id) {
+  const { data } = await apiClient.post(`/dashboards/${id}/homepage`);
+  return data.dashboard;
+}
+
+/** Stop using this dashboard as the current user's homepage. */
+export async function clearDashboardHomepage(id) {
+  const { data } = await apiClient.delete(`/dashboards/${id}/homepage`);
+  return data.dashboard;
 }
 
 /** Delete a dashboard and all its widgets. */

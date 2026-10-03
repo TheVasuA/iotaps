@@ -50,6 +50,9 @@ def _prepare_tables() -> None:
             col.default = ColumnDefault(lambda: uuid.uuid4())
     # JSONB -> JSON for SQLite-backed tests.
     Dashboard.__table__.c.layout.type = JSON()
+    Dashboard.__table__.c.settings.type = JSON()
+    Dashboard.__table__.c.settings.server_default = None
+    Dashboard.__table__.c.settings.default = ColumnDefault(dict)
     Widget.__table__.c.config.type = JSON()
     Widget.__table__.c.layout.type = JSON()
     Widget.__table__.c.annotations.type = JSON()

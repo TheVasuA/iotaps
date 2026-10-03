@@ -27,7 +27,7 @@ function formatWhen(iso) {
   });
 }
 
-export default function NotificationCenter() {
+export default function NotificationCenter({ triggerClassName }) {
   const dispatch = useAppDispatch();
   const items = useAppSelector(selectNotifications);
   const unread = useAppSelector(selectUnreadCount);
@@ -72,7 +72,10 @@ export default function NotificationCenter() {
         }
         aria-haspopup="true"
         aria-expanded={open}
-        className="relative inline-flex h-9 w-9 items-center justify-center rounded-md border border-border bg-card text-foreground transition-colors hover:bg-accent"
+        className={cn(
+          "relative inline-flex h-9 w-9 items-center justify-center rounded-md border border-border bg-card text-foreground transition-colors hover:bg-accent",
+          triggerClassName
+        )}
       >
         <Bell size={18} />
         {unread > 0 ? (

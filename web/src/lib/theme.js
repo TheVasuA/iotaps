@@ -2,7 +2,7 @@
 //
 // Role -> theme mapping:
 //   super_admin     -> purple        (data-theme="admin")        Req 4.1
-//   project_center  -> light yellow  (data-theme="project-center") Req 4.2
+//   project_center  -> brand #7C3BED (data-theme="project-center") Req 4.2
 //   device_user     -> blue-light    (data-theme="device-user")  Req 4.3
 //
 // Visual mode is "light" | "dark" and is persisted per user (Req 4.4). If the

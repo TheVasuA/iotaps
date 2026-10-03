@@ -1,31 +1,54 @@
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { useEffect } from "react";
+import { Link } from "react-router-dom";
+import BrandMark from "@/components/BrandMark";
 import ThemeModeToggle from "@/components/ThemeModeToggle";
+import AuthCard from "@/components/auth/AuthCard";
+import { cn } from "@/lib/utils";
 
-// Shared frame for the unauthenticated auth screens (login, register, 2FA,
-// password reset). Keeps the role/mode theme tokens visible so the toggle and
-// palette behave the same as the rest of the app (Req 4.x).
-export default function AuthShell({ title, description, children, footer }) {
+// Blynk-inspired centered auth frame (login, register, password reset).
+export default function AuthShell({
+  title,
+  subtitle,
+  children,
+  footer,
+  topRight,
+  className,
+  /** @deprecated use subtitle */
+  description,
+}) {
+  const helper = subtitle ?? description;
+
+  // Public auth must use Blynk lime tokens (not a leftover admin/purple session theme).
+  useEffect(() => {
+    const root = document.documentElement;
+    const prev = root.getAttribute("data-theme");
+    root.setAttribute("data-theme", "project-center");
+    return () => {
+      if (prev) root.setAttribute("data-theme", prev);
+    };
+  }, []);
+
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background px-4 py-10 text-foreground">
-      <div className="absolute right-4 top-4">
-        <ThemeModeToggle />
+    <div className={cn("auth-page relative flex min-h-screen flex-col items-center justify-center px-4 py-12", className)}>
+      <div className="absolute right-4 top-4 flex items-center gap-2">
+        {topRight ?? <ThemeModeToggle />}
       </div>
-      <div className="w-full max-w-md space-y-6">
-        <div className="text-center">
-          <span className="text-2xl font-bold text-primary">IoTAPS</span>
-          <p className="text-xs text-muted-foreground">IoT Automation Platform Services</p>
-        </div>
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-xl">{title}</CardTitle>
-            {description ? <CardDescription>{description}</CardDescription> : null}
-          </CardHeader>
-          <CardContent className="space-y-4">{children}</CardContent>
-        </Card>
-        {footer ? (
-          <p className="text-center text-sm text-muted-foreground">{footer}</p>
-        ) : null}
+      <div className="absolute bottom-4 right-6 hidden gap-4 text-xs sm:flex">
+        <Link to="/privacy" className="text-[#2563eb] hover:underline">
+          Privacy Policy
+        </Link>
+        <Link to="/terms" className="text-[#2563eb] hover:underline">
+          Terms of Service
+        </Link>
       </div>
+
+      <Link to="/" className="mb-6 block transition-opacity hover:opacity-90" aria-label="IoTAPS home">
+        <BrandMark size={48} className="rounded-none shadow-sm" />
+      </Link>
+
+      <AuthCard title={title} subtitle={helper} footer={footer}>
+        {children}
+      </AuthCard>
     </div>
   );
 }

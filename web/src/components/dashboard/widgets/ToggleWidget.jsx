@@ -44,8 +44,15 @@ export default function ToggleWidget({ widget, onCommand, readOnly }) {
   };
 
   return (
-    <div className="flex h-full items-center justify-between gap-3 p-4">
-      <span className="text-sm text-muted-foreground">{on ? "On" : "Off"}</span>
+    <div className="flex h-full items-center justify-between px-3 select-none">
+      <div className="flex flex-col justify-center">
+        <span className="text-sm font-semibold tracking-tight text-slate-800 dark:text-slate-200">
+          {config.onLabel && on ? config.onLabel : config.offLabel && !on ? config.offLabel : on ? "Active" : "Inactive"}
+        </span>
+        <span className="text-[10px] font-mono text-slate-400">
+          {on ? "Relay closed" : "Relay open"}
+        </span>
+      </div>
       <Switch checked={on} onChange={handle} disabled={readOnly} />
     </div>
   );

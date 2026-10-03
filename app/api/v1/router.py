@@ -22,6 +22,8 @@ from app.api.v1 import (
     dashboards,
     devices,
     health,
+    org_members,
+    public_config,
     partner,
     referrals,
     reports,
@@ -34,7 +36,9 @@ from app.api.v1 import (
 api_v1_router = APIRouter()
 
 api_v1_router.include_router(health.router)
+api_v1_router.include_router(public_config.router)
 api_v1_router.include_router(auth.router)
+api_v1_router.include_router(org_members.router)
 api_v1_router.include_router(devices.router)
 api_v1_router.include_router(telemetry.router)
 api_v1_router.include_router(rules.router)

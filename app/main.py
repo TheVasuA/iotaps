@@ -35,29 +35,35 @@ API_V1_PREFIX = "/api/v1"
 
 
 async def _seed_superadmin(logger):
-    """Create the super_admin user from env vars if not already present.
+    """Create or promote the super_admin user from SUPERADMIN_EMAIL.
 
-    This runs on every startup but is idempotent: if the email already exists,
-    it ensures the role is super_admin (in case it was manually changed).
+    Existing accounts (e.g. Google OAuth) are promoted without SUPERADMIN_PASSWORD.
+    A new password-based account is created only when both email and password are set.
     """
     settings = get_settings()
-    if not settings.superadmin_email or not settings.superadmin_password:
+    if not settings.superadmin_email.strip():
         return
 
     from app.db.session import async_session_factory
     from app.models.user import User
     from app.models.organization import Organization
     from app.core.security.password import hash_password
+    from app.core.superadmin import find_user_by_superadmin_email, ensure_superadmin_role
+
+    email = settings.superadmin_email.strip().lower()
 
     try:
         async with async_session_factory() as session:
-            result = await session.execute(
-                select(User).where(User.email == settings.superadmin_email)
-            )
-            user = result.scalar_one_or_none()
+            user = await find_user_by_superadmin_email(session, settings)
 
             if user is None:
-                # Need an org for the user
+                if not settings.superadmin_password:
+                    logger.info(
+                        "superadmin_seed_skipped_no_user",
+                        extra={"email": email, "reason": "no_password_for_new_account"},
+                    )
+                    return
+
                 org_result = await session.execute(select(Organization).limit(1))
                 org = org_result.scalar_one_or_none()
                 if org is None:
@@ -67,22 +73,21 @@ async def _seed_superadmin(logger):
 
                 user = User(
                     org_id=org.id,
-                    email=settings.superadmin_email,
-                    gmail_identity=settings.superadmin_email,
+                    email=email,
+                    gmail_identity=email,
                     password_hash=hash_password(settings.superadmin_password),
                     password_format="argon2",
                     role="super_admin",
+                    is_org_owner=True,
                     twofa_enabled=False,
                 )
                 session.add(user)
                 await session.commit()
-                logger.info("superadmin_seeded", extra={"email": settings.superadmin_email})
-            elif user.role != "super_admin":
-                user.role = "super_admin"
-                await session.commit()
-                logger.info("superadmin_role_fixed", extra={"email": settings.superadmin_email})
+                logger.info("superadmin_seeded", extra={"email": email})
+            elif await ensure_superadmin_role(session, user):
+                logger.info("superadmin_role_fixed", extra={"email": email})
             else:
-                logger.info("superadmin_exists", extra={"email": settings.superadmin_email})
+                logger.info("superadmin_exists", extra={"email": email})
     except Exception as exc:
         logger.warning("superadmin_seed_failed", extra={"error": str(exc)})
 
@@ -99,6 +104,36 @@ async def _seed_templates(logger):
             logger.info("default_templates_seeded", extra={"created": created})
     except Exception as exc:
         logger.warning("default_templates_seed_failed", extra={"error": str(exc)})
+
+
+async def _seed_mqtt_node(logger):
+    """Register the public MQTT broker when mqtt_nodes is empty (dev / single node)."""
+    settings = get_settings()
+    if not settings.mqtt_public_host.strip():
+        return
+
+    from app.db.session import async_session_factory
+    from app.services.mqtt_node_seed import seed_default_mqtt_node
+
+    try:
+        async with async_session_factory() as session:
+            created = await seed_default_mqtt_node(
+                session,
+                host=settings.mqtt_public_host,
+                port=settings.mqtt_public_port,
+                capacity=settings.mqtt_node_seed_capacity,
+            )
+        if created:
+            logger.info(
+                "mqtt_node_seeded",
+                extra={
+                    "host": settings.mqtt_public_host.strip(),
+                    "port": settings.mqtt_public_port,
+                    "capacity": settings.mqtt_node_seed_capacity,
+                },
+            )
+    except Exception as exc:
+        logger.warning("mqtt_node_seed_failed", extra={"error": str(exc)})
 
 
 @asynccontextmanager
@@ -119,6 +154,8 @@ async def lifespan(app: FastAPI):
 
     # Seed the default project template catalog (idempotent).
     await _seed_templates(logger)
+
+    await _seed_mqtt_node(logger)
 
     logger.info("application_startup", extra={"env": get_settings().app_env})
     yield

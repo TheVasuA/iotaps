@@ -5,7 +5,7 @@ from __future__ import annotations
 import uuid
 
 from sqlalchemy import Boolean, DateTime, ForeignKey, Text
-from sqlalchemy.dialects.postgresql import UUID as PGUUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base, TenantMixin, TimestampMixin, uuid_pk
@@ -18,6 +18,7 @@ class User(Base, TenantMixin, TimestampMixin):
 
     id: Mapped[uuid.UUID] = uuid_pk()
     email: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
+    display_name: Mapped[str | None] = mapped_column(Text, nullable=True)
     # referral one-per-gmail (Req 19.6)
     gmail_identity: Mapped[str | None] = mapped_column(Text, nullable=True)
     # argon2/bcrypt salted; NULL for OAuth-only accounts
@@ -30,10 +31,15 @@ class User(Base, TenantMixin, TimestampMixin):
     role: Mapped[str] = mapped_column(Text, nullable=False)
     # google
     oauth_provider: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Company org creator; can upgrade individual/student -> company and invite users.
+    is_org_owner: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default="false"
+    )
     twofa_enabled: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default="false"
     )
     twofa_secret: Mapped[str | None] = mapped_column(Text, nullable=True)
+    twofa_backup_hashes: Mapped[list | None] = mapped_column(JSONB, nullable=True)
     # light / dark (Req 4.4)
     theme_mode: Mapped[str] = mapped_column(
         Text, nullable=False, server_default="light"

@@ -65,6 +65,7 @@ class DashboardOut(BaseModel):
     is_public: bool
     public_token: str | None
     layout: dict | None
+    settings: dict | None = None
 
 
 class WidgetOut(BaseModel):
@@ -86,6 +87,30 @@ class CreateDashboardRequest(BaseModel):
 class UpdateDashboardRequest(BaseModel):
     name: str | None = Field(default=None, max_length=256)
     layout: dict | None = None
+    settings: dict | None = None
+
+    model_config = {"extra": "forbid"}
+
+
+class AccessMemberOut(BaseModel):
+    id: str
+    email: str
+    display_name: str | None = None
+    role: str
+    is_owner: bool
+    can_view: bool
+    can_edit: bool
+
+
+class DashboardAccessOut(BaseModel):
+    is_public: bool
+    public_token: str | None = None
+    members: list[AccessMemberOut]
+
+
+class UpdateDashboardAccessRequest(BaseModel):
+    viewers: list[str] = Field(default_factory=list)
+    editors: list[str] = Field(default_factory=list)
 
     model_config = {"extra": "forbid"}
 
@@ -158,6 +183,7 @@ def _dashboard_out(dashboard: Dashboard) -> DashboardOut:
         is_public=bool(dashboard.is_public),
         public_token=dashboard.public_token,
         layout=dashboard.layout,
+        settings=dashboard.settings or {},
     )
 
 
@@ -253,9 +279,75 @@ async def update_dashboard(
         dashboard_id,
         name=payload.name,
         layout=payload.layout,
+        settings=payload.settings,
         name_set="name" in fields_set,
         layout_set="layout" in fields_set,
+        settings_set="settings" in fields_set,
     )
+    return DashboardResponse(dashboard=_dashboard_out(dashboard))
+
+
+@router.get("/{dashboard_id}/access", response_model=DashboardAccessOut)
+async def get_dashboard_access(
+    dashboard_id: uuid.UUID,
+    scope: TenantScope = Depends(tenant_scope),
+    _: Principal = Depends(require_role(*_MANAGE_ROLES)),
+) -> DashboardAccessOut:
+    """List workspace members and who can view or edit this dashboard."""
+    service = DashboardService(scope)
+    return DashboardAccessOut(**await service.get_access(dashboard_id))
+
+
+@router.put("/{dashboard_id}/access", response_model=DashboardAccessOut)
+async def update_dashboard_access(
+    dashboard_id: uuid.UUID,
+    payload: UpdateDashboardAccessRequest,
+    scope: TenantScope = Depends(tenant_scope),
+    _: Principal = Depends(require_role(*_MANAGE_ROLES)),
+) -> DashboardAccessOut:
+    """Grant view or edit access to people in the same workspace."""
+    service = DashboardService(scope)
+    saved = await service.set_access(
+        dashboard_id,
+        viewers=payload.viewers,
+        editors=payload.editors,
+    )
+    return DashboardAccessOut(**saved)
+
+
+@router.post("/{dashboard_id}/duplicate", response_model=DashboardResponse, status_code=201)
+async def duplicate_dashboard(
+    dashboard_id: uuid.UUID,
+    scope: TenantScope = Depends(tenant_scope),
+    _: Principal = Depends(require_role(*_MANAGE_ROLES)),
+) -> DashboardResponse:
+    """Copy a dashboard and its widgets into a new private dashboard."""
+    service = DashboardService(scope)
+    dashboard = await service.duplicate_dashboard(dashboard_id)
+    return DashboardResponse(dashboard=_dashboard_out(dashboard))
+
+
+@router.post("/{dashboard_id}/homepage", response_model=DashboardResponse)
+async def set_dashboard_homepage(
+    dashboard_id: uuid.UUID,
+    scope: TenantScope = Depends(tenant_scope),
+    _: Principal = Depends(require_role(*_MANAGE_ROLES)),
+) -> DashboardResponse:
+    """Open this dashboard first for the current user."""
+    service = DashboardService(scope)
+    dashboard = await service.set_homepage(dashboard_id)
+    return DashboardResponse(dashboard=_dashboard_out(dashboard))
+
+
+@router.delete("/{dashboard_id}/homepage", response_model=DashboardResponse)
+async def clear_dashboard_homepage(
+    dashboard_id: uuid.UUID,
+    scope: TenantScope = Depends(tenant_scope),
+    _: Principal = Depends(require_role(*_MANAGE_ROLES)),
+) -> DashboardResponse:
+    """Stop opening this dashboard first for the current user."""
+    service = DashboardService(scope)
+    dashboard = await service.clear_homepage(dashboard_id)
     return DashboardResponse(dashboard=_dashboard_out(dashboard))
 
 

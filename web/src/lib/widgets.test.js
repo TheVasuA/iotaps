@@ -11,6 +11,9 @@ import {
   widgetMeta,
   defaultConfigFor,
   defaultLayoutFor,
+  widgetToGridItem,
+  layoutFromGridItem,
+  widgetsByCategory,
   readMetric,
   evaluateThreshold,
   appendPoint,
@@ -45,6 +48,28 @@ describe("widget catalog", () => {
   it("isWidgetType rejects unknown types", () => {
     expect(isWidgetType("line")).toBe(true);
     expect(isWidgetType("bogus")).toBe(false);
+  });
+
+  it("widgetsByCategory lists every widget type once", () => {
+    const groups = widgetsByCategory();
+    const listed = groups.flatMap((g) => g.types);
+    expect(listed.sort()).toEqual([...WIDGET_TYPES].sort());
+  });
+
+  it("widgetToGridItem maps persisted layout to RGL and pins when not editing", () => {
+    const item = widgetToGridItem(
+      {
+        id: "w1",
+        type: "value",
+        pinned: true,
+        layout: { x: 2, y: 3, w: 4, h: 2 },
+      },
+      { editing: false }
+    );
+    expect(item.i).toBe("w1");
+    expect(item.x).toBe(2);
+    expect(item.static).toBe(true);
+    expect(layoutFromGridItem(item)).toEqual({ x: 2, y: 3, w: 4, h: 2 });
   });
 
   it("defaultConfigFor returns a fresh object merged with overrides", () => {

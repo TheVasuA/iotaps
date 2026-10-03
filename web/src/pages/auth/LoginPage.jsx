@@ -1,12 +1,11 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { Link, useNavigate, useLocation } from "react-router-dom";
+import { EnvelopeSimple, LockKey, ArrowLeft, ShieldCheck } from "@phosphor-icons/react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import GoogleSignInButton from "@/components/GoogleSignInButton";
-import ThemeModeToggle from "@/components/ThemeModeToggle";
-import Logo from "@/components/Logo";
+import AuthShell from "@/components/AuthShell";
+import { AuthField, AuthDivider, authLinkClass } from "@/components/auth/AuthField";
 import { useAppDispatch } from "@/store/hooks";
 import { setCredentials } from "@/store/authSlice";
 import {
@@ -14,18 +13,35 @@ import {
   loginWithGoogle,
   principalFromToken,
   extractApiError,
+  decodeJwt,
 } from "@/lib/authApi";
+import { useGoogleRedirectCredential } from "@/lib/useGoogleRedirectCredential";
+
+function emailFromIdToken(idToken) {
+  const claims = decodeJwt(idToken);
+  return claims?.email || "";
+}
 
 export default function LoginPage() {
   const dispatch = useAppDispatch();
   const navigate = useNavigate();
   const location = useLocation();
-  const redirectTo = location.state?.from || "/dashboard";
+  const redirectTo = location.state?.from || "/homepage";
+  const reauthMessage = location.state?.message;
 
+  useEffect(() => {
+    if (reauthMessage) {
+      toast.info(reauthMessage);
+    }
+  }, [reauthMessage]);
+
+  const [step, setStep] = useState(1);
+  const [authMethod, setAuthMethod] = useState("password");
+  const [pendingGoogleToken, setPendingGoogleToken] = useState(null);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [otp, setOtp] = useState("");
-  const [needsOtp, setNeedsOtp] = useState(false);
+  const [useBackupCode, setUseBackupCode] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
   const finishLogin = useCallback(
@@ -47,19 +63,47 @@ export default function LoginPage() {
     [dispatch, navigate, redirectTo]
   );
 
-  const onSubmit = async (e) => {
+  const onGoogleCredential = useCallback(
+    async (idToken) => {
+      setSubmitting(true);
+      try {
+        const tokens = await loginWithGoogle({ idToken });
+        finishLogin(tokens, emailFromIdToken(idToken));
+      } catch (err) {
+        const { code, message } = extractApiError(err);
+        if (code === "twofa_required") {
+          setPendingGoogleToken(idToken);
+          setAuthMethod("google");
+          setEmail(emailFromIdToken(idToken) || email);
+          setStep(2);
+          toast.info("Enter the code from your authenticator app");
+        } else if (code === "authentication_error" || code === "oauth_not_configured") {
+          toast.error(message || "Google sign-in was rejected.");
+        } else {
+          toast.error(message);
+        }
+      } finally {
+        setSubmitting(false);
+      }
+    },
+    [email]
+  );
+
+  useGoogleRedirectCredential(step === 1 ? onGoogleCredential : undefined);
+
+  const onSubmitCredentials = async (e) => {
     e.preventDefault();
+    setAuthMethod("password");
+    setPendingGoogleToken(null);
     setSubmitting(true);
     try {
-      const tokens = await login({ email, password, otp: needsOtp ? otp : undefined });
+      const tokens = await login({ email, password });
       finishLogin(tokens, email);
     } catch (err) {
       const { code, message } = extractApiError(err);
       if (code === "twofa_required") {
-        setNeedsOtp(true);
-        toast.info("Enter your two-factor authentication code");
-      } else if (code === "twofa_invalid") {
-        toast.error("Invalid authentication code");
+        setStep(2);
+        toast.info("Enter the code from your authenticator app");
       } else if (code === "password_reset_required") {
         toast.error("Password reset required.");
         navigate("/forgot-password", { state: { email } });
@@ -71,170 +115,157 @@ export default function LoginPage() {
     }
   };
 
-  const onGoogleCredential = useCallback(
-    async (idToken) => {
-      setSubmitting(true);
-      try {
-        const tokens = await loginWithGoogle({ idToken });
-        finishLogin(tokens);
-      } catch (err) {
-        toast.error(extractApiError(err).message);
-      } finally {
-        setSubmitting(false);
+  const onSubmit2fa = async (e) => {
+    e.preventDefault();
+    if (!otp.trim()) {
+      toast.error(useBackupCode ? "Enter your backup code" : "Enter your 6-digit code");
+      return;
+    }
+    setSubmitting(true);
+    try {
+      let tokens;
+      if (authMethod === "google" && pendingGoogleToken) {
+        tokens = await loginWithGoogle({ idToken: pendingGoogleToken, otp: otp.trim() });
+        finishLogin(tokens, emailFromIdToken(pendingGoogleToken) || email);
+      } else {
+        tokens = await login({ email, password, otp: otp.trim() });
+        finishLogin(tokens, email);
       }
-    },
-    [finishLogin]
-  );
+    } catch (err) {
+      const { code, message } = extractApiError(err);
+      if (code === "twofa_invalid") {
+        toast.error("Invalid code — try again");
+      } else {
+        toast.error(message);
+      }
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const is2faStep = step === 2;
 
   return (
-    <div className="flex h-screen overflow-hidden bg-background text-foreground">
-      {/* Left panel — branding */}
-      <div className="hidden lg:flex lg:w-1/2 flex-col justify-between bg-primary/5 p-12">
-        <div>
-          <Link
-            to="/"
-            className="flex items-center gap-3 font-brand text-3xl font-bold tracking-tight text-primary"
-          >
-            <Logo size={56} />
-            <span>
-              iotaps<span className="font-medium text-primary/60">.com</span>
-            </span>
-          </Link>
-          <p className="mt-2 text-sm text-muted-foreground">
-            IoT Automation Platform Services
-          </p>
-        </div>
-        <div className="space-y-6">
-          <h2 className="text-4xl font-bold leading-tight tracking-tight text-foreground">
-            Monitor. Automate.<br />Control your fleet.
-          </h2>
-          <p className="max-w-md text-base leading-relaxed text-muted-foreground">
-            Real-time dashboards, visual rule engine, OTA updates, and billing — all from one platform built for scale.
-          </p>
-          <div className="flex gap-10 pt-2">
-            <div>
-              <div className="text-3xl font-bold text-primary">10M+</div>
-              <div className="mt-1 text-xs text-muted-foreground">Devices</div>
-            </div>
-            <div>
-              <div className="text-3xl font-bold text-primary">99.9%</div>
-              <div className="mt-1 text-xs text-muted-foreground">Uptime</div>
-            </div>
-            <div>
-              <div className="text-3xl font-bold text-primary">79ms</div>
-              <div className="mt-1 text-xs text-muted-foreground">Latency</div>
-            </div>
-          </div>
-        </div>
-        <p className="text-xs text-muted-foreground">
-          © {new Date().getFullYear()} iotaps.com. All rights reserved.
-        </p>
-      </div>
-
-      {/* Right panel — login form */}
-      <div className="flex w-full flex-col lg:w-1/2">
-        {/* Top bar */}
-        <div className="flex items-center justify-between px-6 py-3 shrink-0">
-          <Link to="/" className="flex items-center gap-2 font-brand text-xl font-bold tracking-tight text-primary lg:hidden">
-            <Logo size={36} />
-            <span>iotaps<span className="font-medium text-primary/60">.com</span></span>
-          </Link>
-          <div className="flex items-center gap-3">
-            <ThemeModeToggle />
-            <Link to="/register" className="text-sm font-medium text-muted-foreground hover:text-primary">
-              Create account
+    <AuthShell
+      title={is2faStep ? "Two-factor authentication" : "Log In"}
+      subtitle={
+        is2faStep
+          ? "Your account has 2FA enabled. Enter the code from your authenticator app."
+          : undefined
+      }
+      footer={
+        !is2faStep ? (
+          <>
+            Don&apos;t have an account yet?{" "}
+            <Link to="/register" className={authLinkClass}>
+              Sign Up
             </Link>
-          </div>
-        </div>
+          </>
+        ) : null
+      }
+    >
+      <div className="space-y-6">
+        {is2faStep ? (
+          <>
+            <button
+              type="button"
+              className="flex items-center gap-1 text-sm font-medium text-primary hover:underline"
+              onClick={() => {
+                setStep(1);
+                setOtp("");
+                setUseBackupCode(false);
+                setPendingGoogleToken(null);
+                setAuthMethod("password");
+              }}
+            >
+              <ArrowLeft size={16} />
+              Back to sign in
+            </button>
 
-        {/* Form centered */}
-        <div className="flex flex-1 items-center justify-center px-6 py-4">
-          <div className="w-full max-w-sm space-y-5">
-            <div>
-              <h1 className="text-2xl font-bold">Welcome back</h1>
-              <p className="mt-1 text-sm text-muted-foreground">Sign in to your account</p>
+            <div className="flex flex-col items-center gap-2 py-2">
+              <span className="flex h-14 w-14 items-center justify-center rounded-full bg-primary/10 text-primary">
+                <ShieldCheck size={32} weight="duotone" />
+              </span>
+              <p className="text-center text-xs text-muted-foreground">
+                {authMethod === "google" ? "Google sign-in" : "Signing in"} as{" "}
+                <span className="font-medium text-foreground">{email || "your account"}</span>
+              </p>
             </div>
 
-            {/* Google sign-in — prominent, separate from form */}
-            <GoogleSignInButton onCredential={onGoogleCredential} disabled={submitting} />
-
-            {/* Divider */}
-            <div className="relative">
-              <div className="absolute inset-0 flex items-center">
-                <div className="w-full border-t border-border" />
-              </div>
-              <div className="relative flex justify-center">
-                <span className="bg-background px-3 text-xs text-muted-foreground">or continue with email</span>
-              </div>
-            </div>
-
-            {/* Email/password form */}
-            <form className="space-y-4" onSubmit={onSubmit}>
-              <div className="space-y-1.5">
-                <Label htmlFor="email">Email</Label>
-                <Input
-                  id="email"
-                  type="email"
-                  placeholder="you@company.com"
-                  autoComplete="email"
-                  required
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  disabled={needsOtp}
-                />
-              </div>
-              <div className="space-y-1.5">
-                <div className="flex items-center justify-between">
-                  <Label htmlFor="password">Password</Label>
-                  <Link
-                    to="/forgot-password"
-                    className="text-xs text-primary hover:underline"
-                  >
-                    Forgot?
-                  </Link>
-                </div>
-                <Input
-                  id="password"
-                  type="password"
-                  placeholder="••••••••"
-                  autoComplete="current-password"
-                  required
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  disabled={needsOtp}
-                />
-              </div>
-
-              {needsOtp && (
-                <div className="space-y-1.5">
-                  <Label htmlFor="otp">2FA Code</Label>
-                  <Input
-                    id="otp"
-                    inputMode="numeric"
-                    autoComplete="one-time-code"
-                    placeholder="123456"
-                    required
-                    value={otp}
-                    onChange={(e) => setOtp(e.target.value)}
-                    autoFocus
-                  />
-                </div>
-              )}
-
-              <Button type="submit" className="w-full" disabled={submitting}>
-                {submitting ? "Signing in..." : needsOtp ? "Verify & sign in" : "Sign in"}
+            <form className="space-y-4" onSubmit={onSubmit2fa}>
+              <AuthField
+                id="otp"
+                label={useBackupCode ? "Backup code" : "Authentication code"}
+                inputMode={useBackupCode ? "text" : "numeric"}
+                autoComplete="one-time-code"
+                placeholder={useBackupCode ? "XXXX-XXXX" : "000000"}
+                required
+                maxLength={12}
+                value={otp}
+                onChange={(e) => setOtp(e.target.value.replace(/\s/g, ""))}
+                autoFocus
+              />
+              <button
+                type="button"
+                className="text-xs font-medium text-primary hover:underline"
+                onClick={() => setUseBackupCode((b) => !b)}
+              >
+                {useBackupCode ? "Use authenticator app instead" : "Use a backup code instead"}
+              </button>
+              <Button type="submit" className="auth-submit-btn w-full" disabled={submitting}>
+                {submitting ? "Verifying…" : "Verify & log in"}
               </Button>
             </form>
+          </>
+        ) : (
+          <>
+            <div className="auth-google-wrap">
+              <GoogleSignInButton
+                onCredential={onGoogleCredential}
+                disabled={submitting}
+                redirectReturnPath="/login"
+              />
+            </div>
 
-            <p className="text-center text-xs text-muted-foreground">
-              Don&apos;t have an account?{" "}
-              <Link to="/register" className="font-medium text-primary hover:underline">
-                Sign up free
-              </Link>
-            </p>
-          </div>
-        </div>
+            <AuthDivider label="or email" />
+
+            <form className="space-y-4" onSubmit={onSubmitCredentials}>
+              <AuthField
+                id="email"
+                label="Email"
+                type="email"
+                icon={EnvelopeSimple}
+                placeholder="you@company.com"
+                autoComplete="email"
+                required
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+              />
+              <AuthField
+                id="password"
+                label="Password"
+                type="password"
+                icon={LockKey}
+                placeholder="••••••••"
+                autoComplete="current-password"
+                required
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+              />
+
+              <p className="text-center text-sm">
+                <Link to="/forgot-password" className={authLinkClass}>
+                  Forgot password?
+                </Link>
+              </p>
+
+              <Button type="submit" className="auth-submit-btn w-full" disabled={submitting}>
+                {submitting ? "Signing in…" : "Continue"}
+              </Button>
+            </form>
+          </>
+        )}
       </div>
-    </div>
+    </AuthShell>
   );
 }

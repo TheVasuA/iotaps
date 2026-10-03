@@ -56,6 +56,7 @@ patches:
         name: PLACEHOLDER
 
   - path: patch-dev-config.yaml
+  - path: patch-dev-mosquitto-hostport.yaml
   - path: patch-dev-resources.yaml
   - path: patch-dev-storage.yaml
   # Strips the TLS block: without cert-manager the referenced secret never

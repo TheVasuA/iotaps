@@ -59,6 +59,8 @@ class AccessClaims:
     iat: int
     exp: int
     jti: str
+    account_type: str = "individual"
+    org_name: str = ""
 
     @property
     def is_super_admin(self) -> bool:
@@ -82,6 +84,8 @@ def create_access_token(
     org_id: str,
     role: str,
     email: str = "",
+    account_type: str = "individual",
+    org_name: str = "",
     settings: Settings | None = None,
     now: datetime | None = None,
     jti: str | None = None,
@@ -96,6 +100,8 @@ def create_access_token(
         "org_id": str(org_id),
         "role": role,
         "email": email,
+        "account_type": account_type,
+        "org_name": org_name,
         "iat": iat,
         "exp": exp,
         "jti": jti or uuid.uuid4().hex,
@@ -133,6 +139,8 @@ def decode_access_token(token: str, *, settings: Settings | None = None) -> Acce
             iat=int(payload["iat"]),
             exp=int(payload["exp"]),
             jti=str(payload["jti"]),
+            account_type=str(payload.get("account_type") or "individual"),
+            org_name=str(payload.get("org_name") or ""),
         )
     except (KeyError, ValueError, TypeError) as exc:
         raise TokenError("access token missing required claims") from exc
@@ -199,6 +207,20 @@ async def issue_refresh_token(
     return token
 
 
+def decode_refresh_token(token: str, *, settings: Settings | None = None) -> AccessClaims:
+    """Verify a refresh JWT and return its principal claims (before Redis rotation)."""
+    settings = settings or get_settings()
+    payload = _decode_refresh_jwt(token, settings)
+    return AccessClaims(
+        sub=str(payload["sub"]),
+        org_id=str(payload.get("org_id", "")),
+        role=str(payload.get("role", "")),
+        iat=int(payload["iat"]),
+        exp=int(payload["exp"]),
+        jti=str(payload["jti"]),
+    )
+
+
 def _decode_refresh_jwt(token: str, settings: Settings) -> dict:
     try:
         payload = jwt.decode(
@@ -239,6 +261,11 @@ async def rotate_refresh_token(
     *,
     settings: Settings | None = None,
     now: datetime | None = None,
+    role: str | None = None,
+    org_id: str | None = None,
+    email: str | None = None,
+    account_type: str | None = None,
+    org_name: str | None = None,
 ) -> tuple[str, str]:
     """Validate a refresh token and rotate it, returning new (access, refresh).
 
@@ -264,18 +291,29 @@ async def rotate_refresh_token(
         raise TokenError("refresh token revoked or expired")
 
     user_id = str(payload["sub"])
-    org_id = str(payload.get("org_id", ""))
-    role = str(payload.get("role", ""))
-    email = str(payload.get("email", ""))
+    org_id_val = org_id if org_id is not None else str(payload.get("org_id", ""))
+    role_val = role if role is not None else str(payload.get("role", ""))
+    email_val = email if email is not None else str(payload.get("email", ""))
+    account_type_val = (
+        account_type if account_type is not None else str(payload.get("account_type", "individual"))
+    )
+    org_name_val = org_name if org_name is not None else str(payload.get("org_name", ""))
 
     access = create_access_token(
-        user_id=user_id, org_id=org_id, role=role, email=email, settings=settings, now=now
+        user_id=user_id,
+        org_id=org_id_val,
+        role=role_val,
+        email=email_val,
+        account_type=account_type_val,
+        org_name=org_name_val,
+        settings=settings,
+        now=now,
     )
     new_refresh = await issue_refresh_token(
         redis,
         user_id=user_id,
-        org_id=org_id,
-        role=role,
+        org_id=org_id_val,
+        role=role_val,
         settings=settings,
         now=now,
     )

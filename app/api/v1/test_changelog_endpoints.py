@@ -1,6 +1,7 @@
 """Endpoint tests for the Changelog API + "What's new" popup (Task 19.5, Req 22).
 
-Exercises publishing changelog entries (Req 22.1) and the unseen/seen popup
+Exercises publishing changelog entries (Req 22.1), the public published list
+backing the marketing Changelog page (Req 31.1), and the unseen/seen popup
 feed (Req 22.2) end to end against an in-memory SQLite database (dependency
 override). No live Postgres/Redis is required.
 """
@@ -12,6 +13,7 @@ import uuid
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import JSON
 from sqlalchemy.ext.asyncio import (
     AsyncSession,
     async_sessionmaker,
@@ -43,6 +45,9 @@ def _prepare_tables_for_sqlite() -> None:
         id_col = table.c.id
         id_col.server_default = None
         id_col.default = ColumnDefault(lambda: uuid.uuid4())
+    # JSONB -> JSON for SQLite-backed tests (User.twofa_backup_hashes), the
+    # same shim test_dashboards_endpoints.py applies to its JSONB columns.
+    User.__table__.c.twofa_backup_hashes.type = JSON()
 
 
 def _settings() -> Settings:
@@ -126,6 +131,14 @@ def _auth_for(user_id: str, org_id: str, role: str) -> dict[str, str]:
 # ---------------------------------------------------------------------------
 # Publishing (Req 22.1)
 # ---------------------------------------------------------------------------
+def test_publish_requires_auth(client):
+    resp = client.post(
+        _url("/admin/changelog"),
+        json={"version": "1.0", "title": "Launch", "body": "Hello"},
+    )
+    assert resp.status_code == 401
+
+
 async def test_publish_requires_super_admin(client, user_factory):
     user_id, org_id = await user_factory(ROLE_DEVICE_USER)
     headers = _auth_for(user_id, org_id, ROLE_DEVICE_USER)
@@ -176,6 +189,47 @@ async def test_draft_entry_not_listed(client, user_factory):
     assert resp.json()["published_at"] is None
     listed = client.get(_url("/changelog"), headers=headers).json()["entries"]
     assert listed == []
+
+
+# ---------------------------------------------------------------------------
+# Public published list (Req 22.1, 31.1)
+# ---------------------------------------------------------------------------
+async def test_list_published_is_public(client, user_factory):
+    # Anonymous GET /changelog backs the public Changelog page: it must not
+    # 401 and must return the published entries with real content.
+    admin_id, admin_org = await user_factory(ROLE_SUPER_ADMIN)
+    headers = _auth_for(admin_id, admin_org, ROLE_SUPER_ADMIN)
+    client.post(
+        _url("/admin/changelog"),
+        headers=headers,
+        json={"version": "1.0", "title": "Launch", "body": "First release"},
+    )
+
+    resp = client.get(_url("/changelog"))
+    assert resp.status_code == 200, resp.text
+    entries = resp.json()["entries"]
+    assert len(entries) == 1
+    assert entries[0]["title"] == "Launch"
+    assert entries[0]["body"] == "First release"
+
+
+def test_list_published_public_empty_feed(client):
+    resp = client.get(_url("/changelog"))
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["entries"] == []
+
+
+async def test_drafts_stay_hidden_from_public_list(client, user_factory):
+    admin_id, admin_org = await user_factory(ROLE_SUPER_ADMIN)
+    headers = _auth_for(admin_id, admin_org, ROLE_SUPER_ADMIN)
+    client.post(
+        _url("/admin/changelog"),
+        headers=headers,
+        json={"title": "Draft", "publish": False},
+    )
+    resp = client.get(_url("/changelog"))
+    assert resp.status_code == 200
+    assert resp.json()["entries"] == []
 
 
 # ---------------------------------------------------------------------------

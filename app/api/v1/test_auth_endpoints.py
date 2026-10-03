@@ -222,7 +222,9 @@ def test_refresh_returns_new_access_token(client):
     ).json()
     resp = client.post(_url("/auth/refresh"), json={"refresh_token": tokens["refresh_token"]})
     assert resp.status_code == 200, resp.text
-    assert resp.json()["access_token"]
+    body = resp.json()
+    assert body["access_token"]
+    assert body.get("refresh_token")
 
 
 def test_refresh_old_token_rejected_after_rotation(client):

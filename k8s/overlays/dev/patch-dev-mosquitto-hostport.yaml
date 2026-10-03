@@ -1,0 +1,19 @@
+# Expose Mosquitto on the node at :1883 so dev-mqtt.iotaps.com (DNS → this host)
+# can reach the broker without a NodePort suffix. Dev single-node only.
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: iotaps-mosquitto
+spec:
+  template:
+    spec:
+      containers:
+        - name: mosquitto
+          ports:
+            - name: mqtt
+              containerPort: 1883
+              hostPort: 1883
+              protocol: TCP
+            - name: mqtt-ws
+              containerPort: 9001
+              protocol: TCP

@@ -14,12 +14,15 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { cn } from "@/lib/utils";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import {
   fetchDevices,
   fetchDeviceGroups,
   setFilters,
   updateDeviceStatus,
+  saveDevice,
+  removeDevice,
   selectDevices,
   selectDeviceGroups,
   selectDeviceFilters,
@@ -90,14 +93,25 @@ function CredentialCell({ value, secret }) {
 
 // Memoized table row: only re-renders when this specific device's data changes.
 // Prevents the whole table from re-rendering when a single device status updates.
-const DeviceRow = memo(function DeviceRow({ device: d, groupName }) {
+const DeviceRow = memo(function DeviceRow({ device: d, groupName, selected, onToggleSelect }) {
   const navigate = useNavigate();
   return (
     <tr
-      onClick={() => navigate(`/devices/${d.id}`)}
-      className="cursor-pointer transition-colors hover:bg-accent/50"
+      className={cn(
+        "cursor-pointer transition-colors hover:bg-accent/50",
+        selected && "bg-primary/5"
+      )}
     >
-      <td className="px-4 py-3">
+      <td className="w-10 px-3 py-3" onClick={(e) => e.stopPropagation()}>
+        <input
+          type="checkbox"
+          checked={selected}
+          aria-label={`Select ${d.label || d.device_uid}`}
+          onChange={() => onToggleSelect(d.id)}
+          className="h-4 w-4 rounded border-input"
+        />
+      </td>
+      <td className="px-4 py-3" onClick={() => navigate(`/devices/${d.id}`)}>
         <div className="font-medium text-foreground">
           {d.label || d.device_uid || "(unnamed)"}
         </div>
@@ -140,6 +154,7 @@ export default function DeviceListPage() {
   const [search, setSearch] = useState("");
   const [wizardOpen, setWizardOpen] = useState(false);
   const [groupsOpen, setGroupsOpen] = useState(false);
+  const [selected, setSelected] = useState(() => new Set());
 
   // Fetch whenever server-side filters change.
   useEffect(() => {
@@ -185,6 +200,45 @@ export default function DeviceListPage() {
       return label.includes(q) || uid.includes(q);
     });
   }, [devices, search]);
+
+  const allVisibleSelected =
+    visible.length > 0 && visible.every((d) => selected.has(d.id));
+
+  const toggleSelect = (id) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (allVisibleSelected) {
+      setSelected(new Set());
+      return;
+    }
+    setSelected(new Set(visible.map((d) => d.id)));
+  };
+
+  const bulkMaintenance = async (on) => {
+    const ids = [...selected];
+    await Promise.all(
+      ids.map((id) => dispatch(saveDevice({ id, changes: { maintenanceMode: on } })).unwrap())
+    );
+    toast.success(`${ids.length} device(s) → maintenance ${on ? "ON" : "OFF"}`);
+    setSelected(new Set());
+  };
+
+  const bulkDelete = async () => {
+    if (!window.confirm(`Delete ${selected.size} device(s)?`)) return;
+    const ids = [...selected];
+    for (const id of ids) {
+      await dispatch(removeDevice(id)).unwrap();
+    }
+    toast.success(`Deleted ${ids.length} device(s)`);
+    setSelected(new Set());
+  };
 
   return (
     <section className="mx-auto max-w-6xl space-y-6">
@@ -263,10 +317,37 @@ export default function DeviceListPage() {
         </Button>
       </div>
 
-      <div className="overflow-hidden rounded-lg border border-border">
-        <table className="w-full text-sm">
-          <thead className="bg-muted/50 text-left text-xs uppercase text-muted-foreground">
+      {selected.size > 0 ? (
+        <div className="flex flex-wrap items-center gap-2 rounded-lg border border-primary/30 bg-primary/5 px-3 py-2 text-sm">
+          <span className="font-medium">{selected.size} selected</span>
+          <Button size="sm" variant="outline" onClick={() => bulkMaintenance(true)}>
+            Maintenance on
+          </Button>
+          <Button size="sm" variant="outline" onClick={() => bulkMaintenance(false)}>
+            Maintenance off
+          </Button>
+          <Button size="sm" variant="destructive" onClick={bulkDelete}>
+            Delete selected
+          </Button>
+          <Button size="sm" variant="ghost" onClick={() => setSelected(new Set())}>
+            Clear
+          </Button>
+        </div>
+      ) : null}
+
+      <div className="tb-entity-table">
+        <table>
+          <thead>
             <tr>
+              <th className="w-10 px-3">
+                <input
+                  type="checkbox"
+                  aria-label="Select all visible devices"
+                  checked={allVisibleSelected}
+                  onChange={toggleSelectAll}
+                  className="h-4 w-4 rounded border-input"
+                />
+              </th>
               <th className="px-4 py-3 font-medium">Device</th>
               <th className="px-4 py-3 font-medium">Status</th>
               <th className="px-4 py-3 font-medium">Group</th>
@@ -277,19 +358,19 @@ export default function DeviceListPage() {
           <tbody className="divide-y divide-border">
             {status === "loading" ? (
               <tr>
-                <td colSpan={5} className="px-4 py-10 text-center text-muted-foreground">
+                <td colSpan={6} className="px-4 py-10 text-center text-muted-foreground">
                   <CircleNotch size={20} className="mx-auto animate-spin" />
                 </td>
               </tr>
             ) : status === "failed" ? (
               <tr>
-                <td colSpan={5} className="px-4 py-10 text-center text-destructive">
+                <td colSpan={6} className="px-4 py-10 text-center text-destructive">
                   {error || "Failed to load devices"}
                 </td>
               </tr>
             ) : visible.length === 0 ? (
               <tr>
-                <td colSpan={5} className="px-4 py-10 text-center text-muted-foreground">
+                <td colSpan={6} className="px-4 py-10 text-center text-muted-foreground">
                   {devices.length === 0
                     ? "No devices yet. Provision your first device."
                     : "No devices match your filters."}
@@ -297,7 +378,13 @@ export default function DeviceListPage() {
               </tr>
             ) : (
               visible.map((d) => (
-                <DeviceRow key={d.id} device={d} groupName={groupName(d.group_id)} />
+                <DeviceRow
+                  key={d.id}
+                  device={d}
+                  groupName={groupName(d.group_id)}
+                  selected={selected.has(d.id)}
+                  onToggleSelect={toggleSelect}
+                />
               ))
             )}
           </tbody>

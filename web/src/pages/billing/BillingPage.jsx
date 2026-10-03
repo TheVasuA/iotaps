@@ -43,8 +43,12 @@ export default function BillingPage() {
     };
   }, []);
 
+  // "from" is the ENTRY tier rate (smallest fleet band), not the volume floor —
+  // a single device cannot start at the 201+ price. Matches PricingPage.
   const fromPriceMonthly = plans?.pricing_tiers?.length
-    ? Math.min(...plans.pricing_tiers.map((t) => t.unit_price_monthly))
+    ? plans.pricing_tiers.reduce((entry, t) =>
+        (t.min_devices ?? 0) < (entry.min_devices ?? 0) ? t : entry
+      ).unit_price_monthly
     : plans?.pro?.unit_price_monthly ?? null;
 
   const onCheckout = (next) => {

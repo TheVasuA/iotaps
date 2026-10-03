@@ -43,6 +43,10 @@ class Settings(BaseSettings):
     mqtt_host: str = "mosquitto"
     mqtt_port: int = 1883
     mqtt_topic_root: str = "iotaps"
+    # Device-facing broker hostname/port stored in mqtt_nodes (auto-seed when empty).
+    mqtt_public_host: str = ""
+    mqtt_public_port: int = 1883
+    mqtt_node_seed_capacity: int = 10_000
 
     # Seconds to wait for a Command_ACK before marking a command UNACKNOWLEDGED
     # (Req 9.7). 0 disables the ACK timer (no automatic timeout).

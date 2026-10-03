@@ -8,6 +8,9 @@ import {
   updateWidget,
   deleteDashboard,
   deleteWidget,
+  duplicateDashboard as duplicateDashboardApi,
+  setDashboardHomepage,
+  clearDashboardHomepage,
 } from "@/lib/dashboardsApi";
 import { appendPoint, readMetric } from "@/lib/widgets";
 import { extractApiError } from "@/lib/authApi";
@@ -78,6 +81,28 @@ export const saveLayout = createAsyncThunk(
   }
 );
 
+export const saveDashboardSettings = createAsyncThunk(
+  "dashboards/saveSettings",
+  async ({ id, settings }, { rejectWithValue }) => {
+    try {
+      return await updateDashboard(id, { settings });
+    } catch (err) {
+      return rejectWithValue(extractApiError(err));
+    }
+  }
+);
+
+export const saveDashboardName = createAsyncThunk(
+  "dashboards/saveName",
+  async ({ id, name }, { rejectWithValue }) => {
+    try {
+      return await updateDashboard(id, { name });
+    } catch (err) {
+      return rejectWithValue(extractApiError(err));
+    }
+  }
+);
+
 export const addWidgetToDashboard = createAsyncThunk(
   "dashboards/addWidget",
   async ({ dashboardId, type, config, layout }, { rejectWithValue }) => {
@@ -94,6 +119,31 @@ export const saveWidget = createAsyncThunk(
   async ({ dashboardId, widgetId, changes }, { rejectWithValue }) => {
     try {
       return await updateWidget(dashboardId, widgetId, changes);
+    } catch (err) {
+      return rejectWithValue(extractApiError(err));
+    }
+  }
+);
+
+export const copyDashboard = createAsyncThunk(
+  "dashboards/duplicate",
+  async (id, { rejectWithValue }) => {
+    try {
+      return await duplicateDashboardApi(id);
+    } catch (err) {
+      return rejectWithValue(extractApiError(err));
+    }
+  }
+);
+
+export const markDashboardHomepage = createAsyncThunk(
+  "dashboards/homepage",
+  async ({ id, userId, enabled = true }, { rejectWithValue }) => {
+    try {
+      const dashboard = enabled
+        ? await setDashboardHomepage(id)
+        : await clearDashboardHomepage(id);
+      return { dashboard, userId, enabled };
     } catch (err) {
       return rejectWithValue(extractApiError(err));
     }
@@ -209,6 +259,15 @@ const dashboardsSlice = createSlice({
       })
       .addCase(createNewDashboard.fulfilled, (state, action) => {
         state.items.unshift(action.payload);
+        state.current = action.payload;
+        state.widgets = [];
+      })
+      .addCase(saveDashboardName.fulfilled, (state, action) => {
+        if (state.current && state.current.id === action.payload.id) {
+          state.current.name = action.payload.name;
+        }
+        const idx = state.items.findIndex((d) => d.id === action.payload.id);
+        if (idx >= 0) state.items[idx].name = action.payload.name;
       })
       .addCase(saveLayout.pending, (state) => {
         state.saving = true;
@@ -223,12 +282,32 @@ const dashboardsSlice = createSlice({
         state.saving = false;
         state.error = action.payload?.message || "Failed to save layout";
       })
+      .addCase(saveDashboardSettings.fulfilled, (state, action) => {
+        if (state.current && state.current.id === action.payload.id) {
+          state.current.settings = action.payload.settings;
+        }
+        const idx = state.items.findIndex((d) => d.id === action.payload.id);
+        if (idx >= 0) state.items[idx].settings = action.payload.settings;
+      })
       .addCase(addWidgetToDashboard.fulfilled, (state, action) => {
         state.widgets.push(action.payload);
       })
       .addCase(saveWidget.fulfilled, (state, action) => {
         const idx = state.widgets.findIndex((w) => w.id === action.payload.id);
         if (idx >= 0) state.widgets[idx] = action.payload;
+      })
+      .addCase(copyDashboard.fulfilled, (state, action) => {
+        state.items.unshift(action.payload);
+      })
+      .addCase(markDashboardHomepage.fulfilled, (state, action) => {
+        const { dashboard, userId, enabled } = action.payload;
+        const apply = (item) => {
+          const users = (item.settings?.homepage_users || []).filter((id) => id !== userId);
+          if (enabled && item.id === dashboard.id) users.push(userId);
+          return { ...item, settings: { ...(item.settings || {}), homepage_users: users } };
+        };
+        state.items = state.items.map(apply);
+        if (state.current) state.current = apply(state.current);
       })
       .addCase(removeDashboard.fulfilled, (state, action) => {
         state.items = state.items.filter((d) => d.id !== action.payload);
@@ -253,6 +332,16 @@ export const {
 export default dashboardsSlice.reducer;
 
 // Selectors
+export const selectHomepageId = (state) => {
+  const userId = state.auth?.user?.id;
+  if (!userId) return null;
+  const uid = String(userId);
+  const match = state.dashboards.items.find((item) =>
+    (item.settings?.homepage_users || []).some((id) => String(id) === uid)
+  );
+  return match?.id || null;
+};
+
 export const selectDashboards = (s) => s.dashboards.items;
 export const selectCurrentDashboard = (s) => s.dashboards.current;
 export const selectWidgets = (s) => s.dashboards.widgets;

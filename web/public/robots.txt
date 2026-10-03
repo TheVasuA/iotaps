@@ -1,0 +1,27 @@
+User-agent: *
+Allow: /
+Disallow: /login
+Disallow: /register
+Disallow: /forgot-password
+Disallow: /reset-password
+Disallow: /get-started
+Disallow: /dashboard
+Disallow: /homepage
+Disallow: /devices
+Disallow: /flasher
+Disallow: /explorer
+Disallow: /custom-data
+Disallow: /locations
+Disallow: /organizations
+Disallow: /snapshots
+Disallow: /fleet
+Disallow: /rules
+Disallow: /billing
+Disallow: /referrals
+Disallow: /wallet
+Disallow: /support
+Disallow: /org
+Disallow: /settings
+Disallow: /admin
+
+Sitemap: https://iotaps.com/sitemap.xml

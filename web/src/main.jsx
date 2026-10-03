@@ -7,12 +7,10 @@ import { initTheme } from "@/lib/theme";
 import { selectRole, setCredentials, logout } from "./store/authSlice";
 import { tokenStore } from "@/lib/apiClient";
 import { principalFromToken, decodeJwt } from "@/lib/authApi";
+import { refreshSessionIfExpired } from "@/lib/sessionRefresh";
 import "./styles/index.css";
 
-// Restore the session from a persisted access token so a page reload keeps the
-// user signed in and re-applies their role theme (Req 4.1-4.3). Expired tokens
-// are cleared; the refresh interceptor handles renewal on the next API call.
-function bootstrapSession() {
+function bootstrapSessionFromStorage() {
   const access = tokenStore.getAccess();
   if (!access) return;
   const claims = decodeJwt(access);
@@ -20,7 +18,6 @@ function bootstrapSession() {
     tokenStore.clear();
     return;
   }
-  // Drop tokens that are already fully expired (no refresh possible offline).
   if (claims.exp && claims.exp * 1000 < Date.now() && !tokenStore.getRefresh()) {
     store.dispatch(logout());
     return;
@@ -31,16 +28,21 @@ function bootstrapSession() {
   }
 }
 
-bootstrapSession();
+async function bootstrapApp() {
+  bootstrapSessionFromStorage();
+  const refreshed = await refreshSessionIfExpired();
+  if (refreshed?.user) {
+    store.dispatch(setCredentials(refreshed));
+  }
+  initTheme(selectRole(store.getState()));
 
-// Apply theming groundwork before first paint (Req 4.1-4.4): set the role
-// theme (from any restored session) and the persisted light/dark mode.
-initTheme(selectRole(store.getState()));
+  ReactDOM.createRoot(document.getElementById("root")).render(
+    <React.StrictMode>
+      <Provider store={store}>
+        <App />
+      </Provider>
+    </React.StrictMode>
+  );
+}
 
-ReactDOM.createRoot(document.getElementById("root")).render(
-  <React.StrictMode>
-    <Provider store={store}>
-      <App />
-    </Provider>
-  </React.StrictMode>
-);
+bootstrapApp();

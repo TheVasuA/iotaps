@@ -1,15 +1,10 @@
 import { useEffect, useState } from "react";
 import { CircleNotch, CheckCircle, WarningCircle, MinusCircle } from "@phosphor-icons/react";
-import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { PublicPage, PageHeader } from "@/components/public/PublicPage";
+import { MarketingShell, MarketingPageHeader } from "@/components/public/PublicPage";
+import { marketingImages } from "@/lib/marketingImages";
 import { getServiceStatus } from "@/lib/publicApi";
 
-// Public Status page (Task 21.1, Req 31.4). Displays the current operational
-// status of platform services by polling the public GET /health endpoint, which
-// reports overall API health plus per-dependency status.
-
-// Map a dependency/overall status string to display metadata.
 const STATUS_META = {
   ok: { label: "Operational", variant: "success", icon: CheckCircle, tone: "text-emerald-500" },
   degraded: { label: "Degraded", variant: "warning", icon: WarningCircle, tone: "text-amber-500" },
@@ -27,7 +22,7 @@ function prettyName(name) {
 
 export default function StatusPage() {
   const [health, setHealth] = useState(null);
-  const [state, setState] = useState("loading"); // loading | ready | error
+  const [state, setState] = useState("loading");
 
   useEffect(() => {
     let cancelled = false;
@@ -51,76 +46,69 @@ export default function StatusPage() {
   const OverallIcon = overall?.icon;
 
   return (
-    <PublicPage>
-      <PageHeader
-        title="Service status"
-        subtitle="Live operational status of IoTAPS platform services."
-      />
+    <MarketingShell
+      eyebrow="Platform"
+      title="Service status"
+      subtitle="Live operational status of IoTAPS platform services."
+      image={marketingImages.heroFleet}
+      imageAlt="Platform infrastructure monitoring"
+    >
+      <MarketingPageHeader title="Current health" subtitle="Polled from the public health endpoint." />
 
       {state === "loading" ? (
         <div className="flex justify-center py-16 text-muted-foreground">
           <CircleNotch size={24} className="animate-spin" />
         </div>
       ) : state === "error" ? (
-        <Card>
-          <CardHeader>
-            <div className="flex items-center gap-2">
-              <WarningCircle size={22} className="text-amber-500" />
-              <CardTitle className="text-lg">Status unavailable</CardTitle>
-            </div>
-            <CardDescription>
-              We couldn&apos;t reach the status service right now. Please try again
-              shortly.
-            </CardDescription>
-          </CardHeader>
-        </Card>
+        <article className="blynk-platform-card p-6">
+          <div className="flex items-center gap-2">
+            <WarningCircle size={22} className="text-amber-500" />
+            <h3 className="text-lg font-bold">Status unavailable</h3>
+          </div>
+          <p className="mt-2 text-sm text-muted-foreground">
+            We couldn&apos;t reach the status service right now. Please try again shortly.
+          </p>
+        </article>
       ) : (
         <div className="space-y-6">
-          <Card>
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  {OverallIcon ? <OverallIcon size={24} className={overall.tone} weight="fill" /> : null}
-                  <CardTitle className="text-lg">
-                    {health.status === "ok"
-                      ? "All systems operational"
-                      : "Some systems degraded"}
-                  </CardTitle>
-                </div>
-                <Badge variant={overall.variant}>{overall.label}</Badge>
+          <article className="blynk-platform-card p-6 sm:p-8">
+            <div className="flex flex-wrap items-center justify-between gap-4">
+              <div className="flex items-center gap-2">
+                {OverallIcon ? <OverallIcon size={24} className={overall.tone} weight="fill" /> : null}
+                <h3 className="text-lg font-bold">
+                  {health.status === "ok" ? "All systems operational" : "Some systems degraded"}
+                </h3>
               </div>
-              <CardDescription>{health.service}</CardDescription>
-            </CardHeader>
-          </Card>
+              <Badge variant={overall.variant}>{overall.label}</Badge>
+            </div>
+            <p className="mt-2 text-sm text-muted-foreground">{health.service}</p>
+          </article>
 
           <div className="space-y-3">
-            <h2 className="text-sm font-semibold text-foreground">Dependencies</h2>
+            <h2 className="text-sm font-bold uppercase tracking-wide text-foreground">Dependencies</h2>
             {health.dependencies?.length ? (
               health.dependencies.map((dep) => {
                 const meta = statusMeta(dep.status);
                 const Icon = meta.icon;
                 return (
-                  <Card key={dep.name}>
-                    <CardContent className="flex items-center justify-between gap-4 py-4">
-                      <div className="flex items-center gap-2">
-                        <Icon size={20} className={meta.tone} weight="fill" />
-                        <span className="text-sm font-medium text-foreground">
-                          {prettyName(dep.name)}
-                        </span>
-                      </div>
-                      <Badge variant={meta.variant}>{meta.label}</Badge>
-                    </CardContent>
-                  </Card>
+                  <article
+                    key={dep.name}
+                    className="blynk-platform-card flex items-center justify-between gap-4 px-6 py-4"
+                  >
+                    <div className="flex items-center gap-2">
+                      <Icon size={20} className={meta.tone} weight="fill" />
+                      <span className="text-sm font-medium text-foreground">{prettyName(dep.name)}</span>
+                    </div>
+                    <Badge variant={meta.variant}>{meta.label}</Badge>
+                  </article>
                 );
               })
             ) : (
-              <p className="text-sm text-muted-foreground">
-                No dependencies reported.
-              </p>
+              <p className="text-sm text-muted-foreground">No dependencies reported.</p>
             )}
           </div>
         </div>
       )}
-    </PublicPage>
+    </MarketingShell>
   );
 }

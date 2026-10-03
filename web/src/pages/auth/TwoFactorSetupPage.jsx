@@ -3,20 +3,10 @@ import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { ShieldCheck } from "@phosphor-icons/react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import AuthCard from "@/components/auth/AuthCard";
+import { AuthField } from "@/components/auth/AuthField";
 import { enable2fa, verify2fa, extractApiError } from "@/lib/authApi";
 
-// Two-factor setup (Req 1.8). Authenticated users provision a TOTP secret via
-// /auth/2fa/enable (returns secret + otpauth URI), scan it into an authenticator
-// app, then confirm a code via /auth/2fa/verify to enable 2FA on the account.
 export default function TwoFactorSetupPage() {
   const navigate = useNavigate();
   const [secret, setSecret] = useState(null);
@@ -44,7 +34,7 @@ export default function TwoFactorSetupPage() {
     try {
       await verify2fa({ otp });
       toast.success("Two-factor authentication enabled");
-      navigate("/dashboard");
+      navigate("/get-started");
     } catch (err) {
       toast.error(extractApiError(err).message);
     } finally {
@@ -53,56 +43,47 @@ export default function TwoFactorSetupPage() {
   };
 
   return (
-    <div className="mx-auto max-w-md py-8">
-      <Card>
-        <CardHeader>
-          <div className="flex items-center gap-2 text-primary">
-            <ShieldCheck size={24} weight="fill" />
-            <CardTitle className="text-xl">Two-factor authentication</CardTitle>
+    <div className="mx-auto flex max-w-lg justify-center px-4 py-6">
+      <AuthCard
+        title="Two-factor authentication"
+        subtitle="Add a second verification factor to protect your account."
+      >
+        <div className="mb-4 flex items-center justify-center gap-2 text-primary">
+          <ShieldCheck size={28} weight="fill" aria-hidden />
+        </div>
+        {!secret ? (
+          <Button onClick={onEnable} disabled={loading} className="auth-submit-btn">
+            {loading ? "Generating…" : "Set up 2FA"}
+          </Button>
+        ) : (
+          <div className="space-y-4">
+            <div>
+              <p className="auth-label mb-2">1. Authenticator secret</p>
+              <code className="block break-all rounded-none border border-zinc-200 bg-zinc-50 px-3 py-2.5 text-sm text-zinc-800">
+                {secret}
+              </code>
+              {otpauthUri ? (
+                <p className="mt-2 break-all text-xs text-zinc-500">otpauth URI: {otpauthUri}</p>
+              ) : null}
+            </div>
+            <form className="space-y-4" onSubmit={onVerify}>
+              <AuthField
+                id="otp"
+                label="2. Verification code"
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                placeholder="123456"
+                required
+                value={otp}
+                onChange={(e) => setOtp(e.target.value)}
+              />
+              <Button type="submit" className="auth-submit-btn" disabled={verifying}>
+                {verifying ? "Verifying…" : "Verify & enable"}
+              </Button>
+            </form>
           </div>
-          <CardDescription>
-            Add a second verification factor to protect your account.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {!secret ? (
-            <Button onClick={onEnable} disabled={loading} className="w-full">
-              {loading ? "Generating..." : "Set up 2FA"}
-            </Button>
-          ) : (
-            <>
-              <div className="space-y-2">
-                <Label>1. Add this secret to your authenticator app</Label>
-                <code className="block break-all rounded-md border border-border bg-muted px-3 py-2 text-sm">
-                  {secret}
-                </code>
-                {otpauthUri ? (
-                  <p className="text-xs text-muted-foreground break-all">
-                    otpauth URI: {otpauthUri}
-                  </p>
-                ) : null}
-              </div>
-              <form className="space-y-3" onSubmit={onVerify}>
-                <div className="space-y-2">
-                  <Label htmlFor="otp">2. Enter the 6-digit code</Label>
-                  <Input
-                    id="otp"
-                    inputMode="numeric"
-                    autoComplete="one-time-code"
-                    placeholder="123456"
-                    required
-                    value={otp}
-                    onChange={(e) => setOtp(e.target.value)}
-                  />
-                </div>
-                <Button type="submit" className="w-full" disabled={verifying}>
-                  {verifying ? "Verifying..." : "Verify & enable"}
-                </Button>
-              </form>
-            </>
-          )}
-        </CardContent>
-      </Card>
+        )}
+      </AuthCard>
     </div>
   );
 }

@@ -5,6 +5,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { widgetMeta } from "@/lib/widgets";
 import apiClient from "@/lib/apiClient";
+import SwitchSettingsDialog from "./SwitchSettingsDialog";
+import SliderSettingsDialog from "./SliderSettingsDialog";
+import TileSettingsDialog from "./TileSettingsDialog";
+import DeviceTableSettingsDialog from "./DeviceTableSettingsDialog";
 
 // Per-type settings form for a widget. Edits the widget `config` (device + metric
 // binding, thresholds, ranges, command name) and saves it back via `onSave`.
@@ -74,6 +78,59 @@ export default function WidgetSettingsDialog({
   }, [config.deviceId]);
 
   if (!widget) return null;
+
+  if (widget.type === "toggle" || widget.config?.variant === "switch") {
+    return (
+      <SwitchSettingsDialog
+        open={open}
+        widget={widget}
+        devices={devices}
+        onClose={onClose}
+        onSave={onSave}
+      />
+    );
+  }
+
+  if (widget.type === "slider" || widget.config?.variant === "slider") {
+    return (
+      <SliderSettingsDialog
+        open={open}
+        widget={widget}
+        devices={devices}
+        onClose={onClose}
+        onSave={onSave}
+      />
+    );
+  }
+
+  if (["label", "count", "online"].includes(widget.config?.variant) || ["label", "device_count", "devices_online"].includes(widget.config?.paletteId)) {
+    return (
+      <TileSettingsDialog
+        open={open}
+        widget={widget}
+        devices={devices}
+        onClose={onClose}
+        onSave={onSave}
+      />
+    );
+  }
+
+  if (
+    widget.config?.variant === "table" ||
+    widget.config?.paletteId === "device_table" ||
+    widget.type === "device_table" ||
+    widget.type === "table"
+  ) {
+    return (
+      <DeviceTableSettingsDialog
+        open={open}
+        widget={widget}
+        devices={devices}
+        onClose={onClose}
+        onSave={onSave}
+      />
+    );
+  }
 
   const meta = widgetMeta(widget.type);
   const fields = fieldsByType[widget.type] || ["deviceId", "metric", "title"];

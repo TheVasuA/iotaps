@@ -140,6 +140,87 @@ export function defaultLayoutFor(type, id, position = {}) {
   };
 }
 
+/** Group widget types for the dashboard builder toolbox. */
+export const WIDGET_CATEGORY_ORDER = [
+  { id: "chart", label: "Device metrics" },
+  { id: "control", label: "Controls" },
+  { id: "value", label: "Tiles" },
+  { id: "location", label: "Location" },
+];
+
+export function widgetsByCategory() {
+  const map = Object.fromEntries(WIDGET_CATEGORY_ORDER.map((c) => [c.id, []]));
+  for (const type of WIDGET_TYPES) {
+    let cat = "value";
+    if (type === "map") cat = "location";
+    else if (["line", "bar", "gauge"].includes(type)) cat = "chart";
+    else if (["toggle", "slider"].includes(type)) cat = "control";
+    if (!map[cat]) map[cat] = [];
+    map[cat].push(type);
+  }
+  return WIDGET_CATEGORY_ORDER.map((c) => ({
+    ...c,
+    types: map[c.id] || [],
+  }));
+}
+
+export const DASHBOARD_TIME_RANGES = [
+  { id: "1d", label: "1d" },
+  { id: "1w", label: "1w" },
+  { id: "1mo", label: "1mo" },
+  { id: "3mo", label: "3mo" },
+  { id: "1y", label: "1y" },
+  { id: "all", label: "All" },
+];
+
+const RANGE_MS = {
+  "1d": 86400000,
+  "1w": 604800000,
+  "1mo": 2592000000,
+  "3mo": 7776000000,
+  "1y": 31536000000,
+};
+
+/** Filter chart series points by dashboard time range preset. */
+export function filterSeriesByTimeRange(series, timeRange) {
+  const list = Array.isArray(series) ? series : [];
+  if (!timeRange || timeRange === "all") return list;
+  const windowMs = RANGE_MS[timeRange];
+  if (!windowMs) return list;
+  const cutoff = Date.now() - windowMs;
+  return list.filter((p) => p.ts == null || p.ts >= cutoff);
+}
+
+/**
+ * React Grid Layout item for a persisted widget. `editing` unlocks drag for
+ * pinned widgets (pinned + !editing => static).
+ */
+export function widgetToGridItem(widget, { editing = false } = {}) {
+  const meta = widgetMeta(widget.type);
+  const def = meta?.defaultLayout || { w: 4, h: 3, minW: 2, minH: 2 };
+  const l = widget.layout || {};
+  return {
+    i: widget.id,
+    x: Number.isFinite(l.x) ? l.x : 0,
+    y: Number.isFinite(l.y) ? l.y : 0,
+    w: l.w ?? def.w,
+    h: l.h ?? def.h,
+    minW: 1,
+    minH: 1,
+    static: Boolean(widget.pinned && !editing),
+  };
+}
+
+/** Backend widget.layout shape from an RGL layout entry. */
+export function layoutFromGridItem(item) {
+  return {
+    x: item.x,
+    y: item.y,
+    w: item.w,
+    h: item.h,
+  };
+}
+
 /**
  * Extract a numeric metric value from a telemetry data object.
  *

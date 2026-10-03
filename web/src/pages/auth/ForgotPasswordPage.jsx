@@ -1,14 +1,12 @@
 import { useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { toast } from "sonner";
+import { EnvelopeSimple } from "@phosphor-icons/react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import AuthShell from "@/components/AuthShell";
+import { AuthField, authLinkClass } from "@/components/auth/AuthField";
 import { requestPasswordReset, extractApiError } from "@/lib/authApi";
 
-// Password reset request (Req 1.9 recovery). The backend always returns 202 to
-// avoid account enumeration, so we show the same confirmation regardless.
 export default function ForgotPasswordPage() {
   const location = useLocation();
   const [email, setEmail] = useState(location.state?.email || "");
@@ -32,37 +30,36 @@ export default function ForgotPasswordPage() {
   return (
     <AuthShell
       title="Reset password"
-      description="We&apos;ll email you a link to reset your password"
+      subtitle="We'll email you a link to reset your password."
       footer={
-        <Link to="/login" className="font-medium text-primary hover:underline">
-          Back to sign in
+        <Link to="/login" className={authLinkClass}>
+          Back to log in
         </Link>
       }
     >
       {sent ? (
-        <p className="text-sm text-muted-foreground">
-          If an account exists for <span className="font-medium text-foreground">{email}</span>,
+        <p className="text-center text-sm leading-relaxed text-zinc-600">
+          If an account exists for <span className="font-semibold text-zinc-900">{email}</span>,
           you&apos;ll receive an email with a reset link shortly. Already have a token?{" "}
-          <Link to="/reset-password" className="text-primary hover:underline">
+          <Link to="/reset-password" className={authLinkClass}>
             Enter it here
           </Link>
           .
         </p>
       ) : (
         <form className="space-y-4" onSubmit={onSubmit}>
-          <div className="space-y-2">
-            <Label htmlFor="email">Email</Label>
-            <Input
-              id="email"
-              type="email"
-              autoComplete="email"
-              required
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-            />
-          </div>
-          <Button type="submit" className="w-full" disabled={submitting}>
-            {submitting ? "Sending..." : "Send reset link"}
+          <AuthField
+            id="email"
+            label="Email"
+            type="email"
+            icon={EnvelopeSimple}
+            autoComplete="email"
+            required
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+          />
+          <Button type="submit" className="auth-submit-btn" disabled={submitting}>
+            {submitting ? "Sending…" : "Send reset link"}
           </Button>
         </form>
       )}
