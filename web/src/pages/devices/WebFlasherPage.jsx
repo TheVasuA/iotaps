@@ -18,13 +18,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import {
   EspWebFlasher,
   SerialLineBuffer,
   FLASH_PHASE,
@@ -297,73 +290,103 @@ export default function WebFlasherPage() {
   // --- Unsupported-browser guard (Req: degrade gracefully) -----------------
   if (!supported) {
     return (
-      <section className="mx-auto max-w-3xl space-y-6">
-        <header>
-          <h1 className="text-2xl font-semibold text-primary">Web Flasher</h1>
-          <p className="text-sm text-muted-foreground">
-            Flash firmware and watch serial output from your browser.
-          </p>
+      <div className="devices-screen">
+        <header className="devices-hero">
+          <div className="devices-hero-grid" aria-hidden />
+          <div className="devices-hero-inner">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wider text-primary">
+                Developer zone
+              </p>
+              <h1 className="mt-1 text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
+                Web Flasher
+              </h1>
+              <p className="mt-1 max-w-xl text-sm text-muted-foreground">
+                Flash firmware and watch serial output from your browser.
+              </p>
+            </div>
+          </div>
         </header>
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-xl">
-              <Warning size={22} className="text-amber-500" />
-              Web Serial not available
-            </CardTitle>
-            <CardDescription>
-              This browser does not support the Web Serial API.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-2 text-sm text-muted-foreground">
-            <p>
-              The Web Flasher needs the Web Serial API, which is available in
-              Chromium-based browsers (Chrome, Edge, Opera) served over HTTPS or
-              localhost.
-            </p>
-            <p>
-              Open this page in a supported browser to flash your ESP32 or
-              ESP8266 device.
-            </p>
-          </CardContent>
-        </Card>
-      </section>
+        <div className="devices-panel mt-4">
+          <div className="devices-panel-body">
+            <div className="flex items-start gap-3">
+              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-amber-500/12 text-amber-600 dark:text-amber-400">
+                <Warning size={22} />
+              </span>
+              <div>
+                <h2 className="text-base font-semibold text-foreground">
+                  Web Serial not available
+                </h2>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  This browser does not support the Web Serial API.
+                </p>
+                <div className="mt-3 space-y-2 text-sm text-muted-foreground">
+                  <p>
+                    The Web Flasher needs the Web Serial API, which is available in
+                    Chromium-based browsers (Chrome, Edge, Opera) served over HTTPS or
+                    localhost.
+                  </p>
+                  <p>
+                    Open this page in a supported browser to flash your ESP32 or
+                    ESP8266 device.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
     );
   }
 
   return (
-    <section className="mx-auto max-w-4xl space-y-6">
-      <header className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold text-primary">Web Flasher</h1>
-          <p className="text-sm text-muted-foreground">
-            Flash ESP32 / ESP8266 firmware and monitor serial output from your
-            browser.
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          {chipName ? <Badge variant="success">{chipName}</Badge> : null}
-          {connected ? (
-            <Button variant="outline" onClick={onDisconnect} disabled={busy}>
-              <PlugsConnected size={16} />
-              Disconnect
-            </Button>
-          ) : (
-            <Button onClick={onConnect} disabled={busy}>
-              {phase === FLASH_PHASE.CONNECTING ? (
-                <CircleNotch size={16} className="animate-spin" />
-              ) : (
-                <Plug size={16} />
-              )}
-              Connect device
-            </Button>
-          )}
+    <div className="devices-screen">
+      <header className="devices-hero">
+        <div className="devices-hero-grid" aria-hidden />
+        <div className="devices-hero-inner">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wider text-primary">
+              Developer zone
+            </p>
+            <h1 className="mt-1 flex items-center gap-2.5 text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
+              <Lightning size={26} className="text-primary" />
+              Web Flasher
+            </h1>
+            <p className="mt-1 max-w-xl text-sm text-muted-foreground">
+              Flash ESP32 / ESP8266 firmware and monitor serial output from your browser.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            {chipName ? (
+              <Badge variant="success">
+                <Cpu size={12} /> {chipName}
+              </Badge>
+            ) : null}
+            {connected ? (
+              <Button variant="outline" onClick={onDisconnect} disabled={busy}>
+                <PlugsConnected size={16} />
+                Disconnect
+              </Button>
+            ) : (
+              <Button onClick={onConnect} disabled={busy}>
+                {phase === FLASH_PHASE.CONNECTING ? (
+                  <CircleNotch size={16} className="animate-spin" />
+                ) : (
+                  <Plug size={16} />
+                )}
+                Connect device
+              </Button>
+            )}
+          </div>
         </div>
       </header>
+
+      <div className="mt-4 space-y-4">
 
       {error ? (
         <div
           role="alert"
-          className="flex items-start gap-2 rounded-lg border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive"
+          className="flex items-start gap-2 rounded-xl border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive"
         >
           <Warning size={18} className="mt-0.5 shrink-0" />
           <span>{error}</span>
@@ -371,19 +394,19 @@ export default function WebFlasherPage() {
       ) : null}
 
       {/* Sample firmware: Blink LED with the device's generated token */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-xl">
-            <Cpu size={20} className="text-primary" />
+      <section className="devices-panel">
+        <header className="devices-panel-head">
+          <div className="devices-panel-title">
+            <Cpu size={16} className="text-primary" />
             Sample firmware (Blink LED)
-          </CardTitle>
-          <CardDescription>
+          </div>
+        </header>
+        <div className="devices-panel-body space-y-4">
+          <p className="text-sm text-muted-foreground">
             Pick one of your devices to generate a ready-to-compile Arduino
             sketch with its unique token baked in. Compile it in the Arduino IDE,
             export the .bin, then flash it below.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
+          </p>
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-1.5">
               <Label htmlFor="sample-device">Device</Label>
@@ -392,7 +415,7 @@ export default function WebFlasherPage() {
                   id="sample-device"
                   value={selectedDeviceId}
                   onChange={(e) => setSelectedDeviceId(e.target.value)}
-                  className="h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                  className="devices-select w-full"
                 >
                   {devices.map((d) => (
                     <option key={d.id} value={d.id}>
@@ -459,25 +482,24 @@ export default function WebFlasherPage() {
             </Button>
           </div>
 
-          <pre className="max-h-80 overflow-auto rounded-lg border border-border bg-zinc-950 p-3 font-mono text-xs leading-relaxed text-zinc-100">
+          <pre className="max-h-80 overflow-auto rounded-xl border border-border bg-zinc-950 p-3.5 font-mono text-xs leading-relaxed text-zinc-100">
             <code>{sampleCode}</code>
           </pre>
-        </CardContent>
-      </Card>
+        </div>
+      </section>
 
       {/* Flashing card (Req 12.1) */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-xl">
-            <Lightning size={20} className="text-primary" />
+      <section className="devices-panel">
+        <header className="devices-panel-head">
+          <div className="devices-panel-title">
+            <Lightning size={16} className="text-primary" />
             Flash firmware
-          </CardTitle>
-          <CardDescription>
-            Select a compiled firmware binary (.bin) and write it to the
-            connected device.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
+          </div>
+        </header>
+        <div className="devices-panel-body space-y-4">
+          <p className="text-sm text-muted-foreground">
+            Select a compiled firmware binary (.bin) and write it to the connected device.
+          </p>
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-1.5">
               <Label htmlFor="firmware">Firmware file</Label>
@@ -542,21 +564,21 @@ export default function WebFlasherPage() {
             )}
             Flash device
           </Button>
-        </CardContent>
-      </Card>
+        </div>
+      </section>
 
       {/* Serial monitor card (Req 12.2) */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-xl">
-            <Terminal size={20} className="text-primary" />
+      <section className="devices-panel">
+        <header className="devices-panel-head">
+          <div className="devices-panel-title">
+            <Terminal size={16} className="text-primary" />
             Serial monitor
-          </CardTitle>
-          <CardDescription>
-            Watch the device's serial output in real time.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
+          </div>
+        </header>
+        <div className="devices-panel-body space-y-4">
+          <p className="text-sm text-muted-foreground">
+            Watch the device&apos;s serial output in real time.
+          </p>
           <div className="flex flex-wrap items-end gap-3">
             <div className="space-y-1.5">
               <Label htmlFor="baud">Baud rate</Label>
@@ -565,7 +587,7 @@ export default function WebFlasherPage() {
                 value={monitorBaud}
                 onChange={(e) => setMonitorBaud(Number(e.target.value))}
                 disabled={phase === FLASH_PHASE.MONITORING}
-                className="h-10 rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:opacity-50"
+                className="devices-select disabled:opacity-50"
               >
                 {MONITOR_BAUD_RATES.map((b) => (
                   <option key={b} value={b}>
@@ -601,7 +623,7 @@ export default function WebFlasherPage() {
             </Button>
           </div>
 
-          <div className="h-72 overflow-auto rounded-lg border border-border bg-zinc-950 p-3 font-mono text-xs text-emerald-300">
+          <div className="h-72 overflow-auto rounded-xl border border-border bg-zinc-950 p-3.5 font-mono text-xs text-emerald-300">
             {monitorLines.length === 0 ? (
               <p className="text-zinc-500">
                 {phase === FLASH_PHASE.MONITORING
@@ -617,25 +639,26 @@ export default function WebFlasherPage() {
             )}
             <div ref={monitorEndRef} />
           </div>
-        </CardContent>
-      </Card>
+        </div>
+      </section>
 
       {logLines.length > 0 ? (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Flasher log</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="max-h-40 overflow-auto rounded-md border border-border bg-muted/40 p-3 font-mono text-xs text-muted-foreground">
+        <section className="devices-panel">
+          <header className="devices-panel-head">
+            <div className="devices-panel-title">Flasher log</div>
+          </header>
+          <div className="devices-panel-body">
+            <div className="max-h-40 overflow-auto rounded-xl border border-border bg-muted/40 p-3 font-mono text-xs text-muted-foreground">
               {logLines.map((line, i) => (
                 <div key={i} className="whitespace-pre-wrap break-all">
                   {line}
                 </div>
               ))}
             </div>
-          </CardContent>
-        </Card>
+          </div>
+        </section>
       ) : null}
-    </section>
+      </div>
+    </div>
   );
 }

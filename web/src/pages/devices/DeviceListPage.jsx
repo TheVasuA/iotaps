@@ -9,6 +9,12 @@ import {
   Copy,
   Eye,
   EyeSlash,
+  Cpu,
+  WifiHigh,
+  WifiSlash,
+  Wrench,
+  Trash,
+  CaretRight,
 } from "@phosphor-icons/react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -33,16 +39,14 @@ import realtimeClient from "@/lib/realtime";
 import ProvisioningWizard from "@/components/devices/ProvisioningWizard";
 import GroupManager from "@/components/devices/GroupManager";
 
-// Device list view (Req 5.3-5.5): the fleet overview with status, group, and
-// label columns, a search box, status/group filters, and entry points to the
-// provisioning wizard and group manager. Rows link to the device detail view.
+// Device list (Req 5.3-5.5): fleet overview with status, group, and label
+// columns, search, status/group filters, provisioning wizard, and group manager.
 const STATUS_OPTIONS = [
   { value: "", label: "All statuses" },
   { value: "online", label: "Online" },
   { value: "offline", label: "Offline" },
 ];
 
-// Credential cell: trimmed value with copy + reveal toggle
 function CredentialCell({ value, secret }) {
   const [revealed, setRevealed] = useState(false);
   const hasValue = value && value !== "—";
@@ -64,43 +68,87 @@ function CredentialCell({ value, secret }) {
 
   return (
     <div className="flex items-center gap-1">
-      <code className="text-xs bg-muted px-1.5 py-0.5 rounded max-w-[110px] truncate" title={revealed ? value : undefined}>
+      <code
+        className="max-w-[120px] truncate rounded-md bg-muted/70 px-2 py-1 font-mono text-xs text-foreground"
+        title={revealed ? value : undefined}
+      >
         {trimmed}
       </code>
       {secret && hasValue && (
         <button
           type="button"
           onClick={handleToggle}
-          className="inline-flex h-5 w-5 items-center justify-center rounded text-muted-foreground hover:text-foreground"
+          className="devices-icon-btn h-7 w-7"
           title={revealed ? "Hide" : "Show"}
         >
-          {revealed ? <EyeSlash size={12} /> : <Eye size={12} />}
+          {revealed ? <EyeSlash size={13} /> : <Eye size={13} />}
         </button>
       )}
       {hasValue && (
         <button
           type="button"
           onClick={handleCopy}
-          className="inline-flex h-5 w-5 items-center justify-center rounded text-muted-foreground hover:text-foreground"
+          className="devices-icon-btn h-7 w-7"
           title="Copy"
         >
-          <Copy size={12} />
+          <Copy size={13} />
         </button>
       )}
     </div>
   );
 }
 
-// Memoized table row: only re-renders when this specific device's data changes.
-// Prevents the whole table from re-rendering when a single device status updates.
+function StatusPill({ status }) {
+  const online = status === "online";
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium",
+        online
+          ? "bg-emerald-500/12 text-emerald-600 dark:text-emerald-400"
+          : "bg-muted text-muted-foreground"
+      )}
+    >
+      <span
+        className={cn(
+          "devices-status-dot",
+          online ? "devices-status-dot-online" : "devices-status-dot-offline"
+        )}
+      />
+      {online ? "Online" : "Offline"}
+    </span>
+  );
+}
+
+function StatTile({ icon: Icon, label, value, tone }) {
+  const tones = {
+    brand: "bg-primary/10 text-primary",
+    online: "bg-emerald-500/12 text-emerald-600 dark:text-emerald-400",
+    offline: "bg-muted text-muted-foreground",
+    warn: "bg-amber-500/12 text-amber-600 dark:text-amber-400",
+  };
+  return (
+    <div className="devices-stat">
+      <span className={cn("devices-stat-icon", tones[tone] || tones.brand)}>
+        <Icon size={20} weight="duotone" />
+      </span>
+      <div>
+        <p className="devices-stat-value">{value}</p>
+        <p className="devices-stat-label">{label}</p>
+      </div>
+    </div>
+  );
+}
+
 const DeviceRow = memo(function DeviceRow({ device: d, groupName, selected, onToggleSelect }) {
   const navigate = useNavigate();
   return (
     <tr
       className={cn(
-        "cursor-pointer transition-colors hover:bg-accent/50",
-        selected && "bg-primary/5"
+        "group cursor-pointer transition-colors hover:bg-accent/40",
+        selected && "bg-primary/[0.06]"
       )}
+      onClick={() => navigate(`/devices/${d.id}`)}
     >
       <td className="w-10 px-3 py-3" onClick={(e) => e.stopPropagation()}>
         <input
@@ -111,33 +159,57 @@ const DeviceRow = memo(function DeviceRow({ device: d, groupName, selected, onTo
           className="h-4 w-4 rounded border-input"
         />
       </td>
-      <td className="px-4 py-3" onClick={() => navigate(`/devices/${d.id}`)}>
-        <div className="font-medium text-foreground">
-          {d.label || d.device_uid || "(unnamed)"}
-        </div>
-        {d.label && d.device_uid ? (
-          <div className="text-xs text-muted-foreground">
-            {d.device_uid}
+      <td className="px-4 py-3">
+        <div className="flex items-center gap-3">
+          <span
+            className={cn(
+              "flex h-9 w-9 shrink-0 items-center justify-center rounded-lg",
+              d.status === "online"
+                ? "bg-emerald-500/12 text-emerald-600 dark:text-emerald-400"
+                : "bg-muted text-muted-foreground"
+            )}
+          >
+            <Cpu size={18} weight="duotone" />
+          </span>
+          <div className="min-w-0">
+            <div className="truncate font-medium text-foreground">
+              {d.label || d.device_uid || "(unnamed)"}
+            </div>
+            {d.label && d.device_uid ? (
+              <div className="truncate font-mono text-xs text-muted-foreground">
+                {d.device_uid}
+              </div>
+            ) : null}
           </div>
-        ) : null}
+        </div>
       </td>
       <td className="px-4 py-3">
-        <Badge variant={d.status === "online" ? "success" : "muted"}>
-          {d.status}
-        </Badge>
+        <StatusPill status={d.status} />
       </td>
-      <td className="px-4 py-3 text-muted-foreground">
-        {groupName || "—"}
+      <td className="px-4 py-3">
+        {groupName ? (
+          <span className="devices-chip">{groupName}</span>
+        ) : (
+          <span className="text-muted-foreground">—</span>
+        )}
       </td>
       <td className="px-4 py-3">
         {d.maintenance_mode ? (
-          <Badge variant="warning">Maintenance</Badge>
+          <Badge variant="warning">
+            <Wrench size={11} /> Maintenance
+          </Badge>
         ) : (
           <span className="text-muted-foreground">—</span>
         )}
       </td>
       <td className="px-4 py-3">
         <CredentialCell value={d.device_token} secret />
+      </td>
+      <td className="w-10 px-2 py-3 text-right">
+        <CaretRight
+          size={16}
+          className="ml-auto text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100"
+        />
       </td>
     </tr>
   );
@@ -156,23 +228,16 @@ export default function DeviceListPage() {
   const [groupsOpen, setGroupsOpen] = useState(false);
   const [selected, setSelected] = useState(() => new Set());
 
-  // Fetch whenever server-side filters change.
   useEffect(() => {
     dispatch(
       fetchDevices({ groupId: filters.groupId, status: filters.status })
     );
   }, [dispatch, filters.groupId, filters.status]);
 
-  // Load device groups once so the filter dropdown and provisioning wizard
-  // reflect existing groups (Req 5.5), not just ones created this session.
   useEffect(() => {
     dispatch(fetchDeviceGroups());
   }, [dispatch]);
 
-  // Subscribe to real-time device status updates via WebSocket instead of
-  // polling. Each device's channel pushes online/offline changes instantly.
-  // Use device IDs as a stable dependency to avoid re-subscribing on every
-  // status change (which would cause table flicker).
   const deviceIds = useMemo(() => devices.map((d) => d.id).join(","), [devices]);
 
   useEffect(() => {
@@ -190,7 +255,17 @@ export default function DeviceListPage() {
 
   const groupName = (id) => groups.find((g) => g.id === id)?.name;
 
-  // Client-side label/uid search on top of the server-filtered list.
+  const stats = useMemo(() => {
+    const online = devices.filter((d) => d.status === "online").length;
+    const maintenance = devices.filter((d) => d.maintenance_mode).length;
+    return {
+      total: devices.length,
+      online,
+      offline: Math.max(0, devices.length - online),
+      maintenance,
+    };
+  }, [devices]);
+
   const visible = useMemo(() => {
     const q = search.trim().toLowerCase();
     if (!q) return devices;
@@ -240,29 +315,47 @@ export default function DeviceListPage() {
     setSelected(new Set());
   };
 
+  const refresh = () =>
+    dispatch(fetchDevices({ groupId: filters.groupId, status: filters.status }));
+
   return (
-    <section className="mx-auto max-w-6xl space-y-6">
-      <header className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold text-primary">Devices</h1>
-          <p className="text-sm text-muted-foreground">
-            Provision and manage your device fleet.
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" onClick={() => setGroupsOpen(true)}>
-            <Stack size={16} />
-            Groups
-          </Button>
-          <Button onClick={() => setWizardOpen(true)}>
-            <Plus size={16} />
-            Provision device
-          </Button>
+    <div className="devices-screen">
+      <header className="devices-hero">
+        <div className="devices-hero-grid" aria-hidden />
+        <div className="devices-hero-inner">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wider text-primary">
+              Fleet
+            </p>
+            <h1 className="mt-1 text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
+              Devices
+            </h1>
+            <p className="mt-1 max-w-xl text-sm text-muted-foreground">
+              Provision hardware, monitor connectivity, and manage credentials across your fleet.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button variant="outline" onClick={() => setGroupsOpen(true)}>
+              <Stack size={16} />
+              Groups
+            </Button>
+            <Button onClick={() => setWizardOpen(true)}>
+              <Plus size={16} />
+              Provision device
+            </Button>
+          </div>
         </div>
       </header>
 
-      <div className="flex flex-wrap items-center gap-3">
-        <div className="relative flex-1 min-w-[12rem]">
+      <div className="mt-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <StatTile icon={Cpu} label="Total devices" value={stats.total} tone="brand" />
+        <StatTile icon={WifiHigh} label="Online" value={stats.online} tone="online" />
+        <StatTile icon={WifiSlash} label="Offline" value={stats.offline} tone="offline" />
+        <StatTile icon={Wrench} label="Maintenance" value={stats.maintenance} tone="warn" />
+      </div>
+
+      <div className="devices-toolbar mt-4">
+        <div className="relative min-w-[12rem] flex-1">
           <MagnifyingGlass
             size={16}
             className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
@@ -280,7 +373,7 @@ export default function DeviceListPage() {
           onChange={(e) =>
             dispatch(setFilters({ status: e.target.value || null }))
           }
-          className="h-10 rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+          className="devices-select"
         >
           {STATUS_OPTIONS.map((o) => (
             <option key={o.value} value={o.value}>
@@ -294,7 +387,7 @@ export default function DeviceListPage() {
           onChange={(e) =>
             dispatch(setFilters({ groupId: e.target.value || null }))
           }
-          className="h-10 rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+          className="devices-select"
         >
           <option value="">All groups</option>
           {groups.map((g) => (
@@ -307,19 +400,15 @@ export default function DeviceListPage() {
           variant="ghost"
           size="icon"
           aria-label="Refresh"
-          onClick={() =>
-            dispatch(
-              fetchDevices({ groupId: filters.groupId, status: filters.status })
-            )
-          }
+          onClick={refresh}
         >
           <ArrowClockwise size={16} />
         </Button>
       </div>
 
       {selected.size > 0 ? (
-        <div className="flex flex-wrap items-center gap-2 rounded-lg border border-primary/30 bg-primary/5 px-3 py-2 text-sm">
-          <span className="font-medium">{selected.size} selected</span>
+        <div className="mt-3 flex flex-wrap items-center gap-2 rounded-xl border border-primary/30 bg-primary/[0.07] px-3 py-2.5 text-sm">
+          <span className="font-medium text-primary">{selected.size} selected</span>
           <Button size="sm" variant="outline" onClick={() => bulkMaintenance(true)}>
             Maintenance on
           </Button>
@@ -327,7 +416,7 @@ export default function DeviceListPage() {
             Maintenance off
           </Button>
           <Button size="sm" variant="destructive" onClick={bulkDelete}>
-            Delete selected
+            <Trash size={14} /> Delete selected
           </Button>
           <Button size="sm" variant="ghost" onClick={() => setSelected(new Set())}>
             Clear
@@ -335,7 +424,7 @@ export default function DeviceListPage() {
         </div>
       ) : null}
 
-      <div className="tb-entity-table">
+      <div className="tb-entity-table mt-4">
         <table>
           <thead>
             <tr>
@@ -353,27 +442,57 @@ export default function DeviceListPage() {
               <th className="px-4 py-3 font-medium">Group</th>
               <th className="px-4 py-3 font-medium">Maintenance</th>
               <th className="px-4 py-3 font-medium">Device Token</th>
+              <th className="w-10 px-2 py-3" />
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
             {status === "loading" ? (
               <tr>
-                <td colSpan={6} className="px-4 py-10 text-center text-muted-foreground">
-                  <CircleNotch size={20} className="mx-auto animate-spin" />
+                <td colSpan={7} className="px-4 py-12 text-center text-muted-foreground">
+                  <CircleNotch size={22} className="mx-auto animate-spin" />
+                  <p className="mt-2 text-sm">Loading fleet…</p>
                 </td>
               </tr>
             ) : status === "failed" ? (
               <tr>
-                <td colSpan={6} className="px-4 py-10 text-center text-destructive">
+                <td colSpan={7} className="px-4 py-12 text-center text-destructive">
                   {error || "Failed to load devices"}
                 </td>
               </tr>
             ) : visible.length === 0 ? (
               <tr>
-                <td colSpan={6} className="px-4 py-10 text-center text-muted-foreground">
-                  {devices.length === 0
-                    ? "No devices yet. Provision your first device."
-                    : "No devices match your filters."}
+                <td colSpan={7} className="px-0 py-0">
+                  <div className="devices-empty m-4 border-0">
+                    <span className="devices-empty-icon">
+                      <Cpu size={28} weight="duotone" />
+                    </span>
+                    <h2 className="mt-4 text-base font-semibold text-foreground">
+                      {devices.length === 0
+                        ? "No devices yet"
+                        : "No devices match your filters"}
+                    </h2>
+                    <p className="mt-1 max-w-sm text-sm text-muted-foreground">
+                      {devices.length === 0
+                        ? "Provision your first device to start receiving telemetry and sending commands."
+                        : "Try adjusting search or filters to find the device you need."}
+                    </p>
+                    {devices.length === 0 ? (
+                      <Button className="mt-5" onClick={() => setWizardOpen(true)}>
+                        <Plus size={16} /> Provision device
+                      </Button>
+                    ) : (
+                      <Button
+                        className="mt-5"
+                        variant="outline"
+                        onClick={() => {
+                          setSearch("");
+                          dispatch(setFilters({ status: null, groupId: null }));
+                        }}
+                      >
+                        Clear filters
+                      </Button>
+                    )}
+                  </div>
                 </td>
               </tr>
             ) : (
@@ -391,11 +510,17 @@ export default function DeviceListPage() {
         </table>
       </div>
 
+      {visible.length > 0 ? (
+        <p className="mt-3 text-xs text-muted-foreground">
+          Showing {visible.length} of {devices.length} device{devices.length === 1 ? "" : "s"}
+        </p>
+      ) : null}
+
       <ProvisioningWizard
         open={wizardOpen}
         onClose={() => setWizardOpen(false)}
       />
       <GroupManager open={groupsOpen} onClose={() => setGroupsOpen(false)} />
-    </section>
+    </div>
   );
 }

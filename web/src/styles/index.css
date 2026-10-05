@@ -2256,4 +2256,119 @@
   .iotaps-admin-top-badge {
     @apply rounded-lg border border-primary/25 bg-primary/5 px-3 py-1.5;
   }
+
+  /* ---- Devices console surfaces (fleet list, detail, explorer, flasher) ---- */
+  .devices-screen {
+    @apply mx-auto w-full max-w-7xl px-4 pb-12 pt-6 md:px-6 lg:px-8;
+    background:
+      radial-gradient(ellipse 80% 50% at 10% -10%, hsl(var(--primary) / 0.07), transparent 55%),
+      radial-gradient(ellipse 50% 40% at 95% 0%, hsl(var(--primary) / 0.04), transparent 50%);
+  }
+
+  .devices-hero {
+    @apply relative overflow-hidden rounded-2xl border border-border bg-card shadow-sm;
+  }
+
+  .devices-hero-grid {
+    @apply pointer-events-none absolute inset-0 opacity-50;
+    background-image: radial-gradient(
+      circle,
+      hsl(var(--primary) / 0.12) 1px,
+      transparent 1px
+    );
+    background-size: 18px 18px;
+  }
+
+  .devices-hero-inner {
+    @apply relative flex flex-wrap items-start justify-between gap-4 p-5 sm:p-6;
+    background: linear-gradient(
+      135deg,
+      hsl(var(--primary) / 0.1) 0%,
+      transparent 58%
+    );
+  }
+
+  .devices-stat {
+    @apply flex min-w-[9.5rem] flex-1 items-center gap-3 rounded-xl border border-border/80 bg-card/90 px-3.5 py-3 shadow-sm;
+  }
+
+  .devices-stat-icon {
+    @apply flex h-10 w-10 shrink-0 items-center justify-center rounded-lg;
+  }
+
+  .devices-stat-value {
+    @apply text-xl font-bold tabular-nums leading-none text-foreground;
+  }
+
+  .devices-stat-label {
+    @apply mt-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground;
+  }
+
+  .devices-toolbar {
+    @apply flex flex-wrap items-center gap-2 rounded-xl border border-border bg-card p-2 shadow-sm;
+  }
+
+  .devices-select {
+    @apply h-10 rounded-md border border-input bg-background px-3 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background;
+  }
+
+  .devices-status-dot {
+    @apply inline-block h-2 w-2 shrink-0 rounded-full;
+  }
+
+  .devices-status-dot-online {
+    @apply bg-emerald-500 shadow-[0_0_0_3px_hsl(160_84%_39%/0.18)];
+  }
+
+  .devices-status-dot-offline {
+    @apply bg-muted-foreground/40;
+  }
+
+  .devices-panel {
+    @apply rounded-xl border border-border bg-card shadow-sm;
+  }
+
+  .devices-panel-head {
+    @apply flex items-center justify-between gap-3 border-b border-border px-5 py-4;
+  }
+
+  .devices-panel-title {
+    @apply flex items-center gap-2 text-sm font-semibold text-foreground;
+  }
+
+  .devices-panel-body {
+    @apply p-5;
+  }
+
+  .devices-cred-code {
+    @apply flex-1 truncate rounded-lg bg-muted/70 px-2.5 py-2 font-mono text-xs text-foreground;
+  }
+
+  .devices-icon-btn {
+    @apply inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground;
+  }
+
+  .devices-mqtt-row {
+    @apply flex cursor-pointer select-none items-center gap-2 border-b border-border/40 px-3 py-2.5 transition-colors hover:bg-accent/40;
+  }
+
+  .devices-mqtt-leaf {
+    @apply flex items-center gap-2 py-1.5 pl-9;
+  }
+
+  .devices-chip {
+    @apply inline-flex items-center gap-1.5 rounded-full border border-border bg-muted/40 px-2.5 py-1 text-[11px] font-medium text-muted-foreground;
+  }
+
+  .devices-empty {
+    @apply flex flex-col items-center justify-center rounded-xl border border-dashed border-border bg-card/60 px-6 py-14 text-center;
+  }
+
+  .devices-empty-icon {
+    @apply flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/10 text-primary;
+  }
+
+  .devices-tab-panel {
+    @apply pt-5;
+  }
 }
